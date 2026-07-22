@@ -33,12 +33,7 @@ def fuse_conv_bn_eval(conv, bn):
 
     std = torch.sqrt(var_val + eps)
     
-    if conv.groups > 1 and conv.groups == conv.in_channels:
-        # Depthwise conv weight shape: (in_channels, 1, K, K)
-        t_conv = (gamma / std).reshape(-1, 1, 1, 1)
-    else:
-        # Standard or pointwise conv weight shape: (out_channels, in_channels/groups, K, K)
-        t_conv = (gamma / std).reshape(-1, 1, 1, 1)
+    t_conv = (gamma / std).reshape(-1, 1, 1, 1)
 
     fused_conv.weight = nn.Parameter(w * t_conv)
 
@@ -100,7 +95,6 @@ class QuantizedConv2d(nn.Module):
             scale_w_view = scale_w.view(-1, 1, 1, 1)
 
             w_int8 = torch.clamp(torch.round(w_fp32 / scale_w_view), -127, 127).to(torch.int8)
-            self.w_dequantized = (w_int8.float() * scale_w_view)
         else:
             # Per-Tensor Quantization
             w_min = w_fp32.min().item()
@@ -110,7 +104,6 @@ class QuantizedConv2d(nn.Module):
             scale_w_view = torch.tensor(scale_w, dtype=torch.float32)
 
             w_int8 = torch.clamp(torch.round(w_fp32 / scale_w), -127, 127).to(torch.int8)
-            self.w_dequantized = (w_int8.float() * scale_w)
 
         self.register_buffer("weight_int8", w_int8)
         self.register_buffer("weight_scale", scale_w_view)
@@ -160,12 +153,20 @@ class QuantizedConv2d(nn.Module):
         self.act_out_scale.copy_(torch.tensor(s_out, dtype=torch.float32))
         self.act_out_zero_point.copy_(torch.tensor(zp_out, dtype=torch.int32))
 
+    def get_dequantized_weight(self):
+        """
+        Dynamically computes dequantized weight from weight_int8 and weight_scale.
+        """
+        return self.weight_int8.float() * self.weight_scale
+
     def forward(self, x):
         if self.calibrating:
             self.update_act_stats(x, self.act_in_min, self.act_in_max)
 
+        w_dequant = self.get_dequantized_weight()
+
         out = nn.functional.conv2d(
-            x, self.w_dequantized, self.bias,
+            x, w_dequant, self.bias,
             stride=self.stride, padding=self.padding, groups=self.groups
         )
 
@@ -194,12 +195,10 @@ def quantize_residual_blocks_only(generator, per_channel=True):
     net = copy.deepcopy(generator)
     
     # Quantize only 16 Residual Blocks
-    print("[INFO] Quantizing 16 Residual Blocks...")
     for res_block in net.residual:
         replace_conv2d_with_quant(res_block, per_channel=per_channel)
 
     # Quantize Intermediate ConvBlock
-    print("[INFO] Quantizing Intermediate ConvBlock...")
     replace_conv2d_with_quant(net.convblock, per_channel=per_channel)
 
     return net
@@ -208,10 +207,6 @@ def quantize_residual_blocks_only(generator, per_channel=True):
 def quantize_generator(weights_path, calib_dir, output_model_path, upscale_factor=4, selective=True, per_channel=True, device_str='cpu'):
     """
     Main PTQ Quantization workflow.
-    
-    Args:
-        selective (bool): If True, preserves Head & Tail in FP32 and quantizes 16 Residual Blocks (FPGA PL target).
-        per_channel (bool): If True, uses Per-Channel weight quantization for Depthwise Conv layers.
     """
     device = torch.device(device_str)
     print(f"[INFO] Running Quantization process on device: {device}")
@@ -274,7 +269,6 @@ def quantize_generator(weights_path, calib_dir, output_model_path, upscale_facto
     torch.save({"model": quant_net.state_dict(), "quantized": True, "selective": selective, "per_channel": per_channel}, output_model_path)
     print(f"[INFO] Quantized INT8 model successfully saved to: {output_model_path}")
 
-    # Calculate model size reduction
     fp32_size = os.path.getsize(weights_path) / (1024 * 1024)
     int8_size = os.path.getsize(output_model_path) / (1024 * 1024)
     print(f"[SUMMARY] Original FP32 Model Size : {fp32_size:.2f} MB")
