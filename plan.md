@@ -19,7 +19,7 @@ PC (Python) → Zynq PS (ARM - AXI DMA) → Zynq PL (FPGA Accelerator) → Zynq 
 
 ---
 
-## 3. Các bước thực thi trên Kaggle Notebook
+## 3. Các bước thực thi trên Kaggle / PC / Zynq Board
 
 ### Bước 1: Pull mã nguồn mới nhất từ GitHub
 ```bash
@@ -29,18 +29,27 @@ PC (Python) → Zynq PS (ARM - AXI DMA) → Zynq PL (FPGA Accelerator) → Zynq 
 
 ---
 
-### Bước 2: Trích xuất trọng số INT8 ra file `.txt` cho FPGA Zynq
-Chạy script `scripts/extract_weights.py` để trích xuất trọng số của tất cả các layer trong 16 khối Residual Blocks ra thư mục `weights_export/`:
+### Bước 2: Chạy Python Host Driver cho Zynq PS (OpenCV Tiling & AXI DMA)
+Script `scripts/zynq_host_driver.py` thực hiện:
+1. Dùng **OpenCV** đọc ảnh X-quang gốc.
+2. Cắt ảnh thành các mảnh nhỏ kích thước $64 \times 64$ (`--tile_size 64`).
+3. Đẩy từng mảng array qua kênh **AXI DMA** (`pynq.allocate` & `dma.sendchannel.transfer`) xuống phần cứng **Zynq PL FPGA Accelerator**.
+4. Nhận kết quả từ AXI DMA và dùng OpenCV **ghép lại thành ảnh Super-Resolution** hoàn chỉnh ($1024 \times 1024$).
 
+**Lệnh chạy mô phỏng (Simulation Mode / Kaggle / PC):**
 ```bash
-!python scripts/extract_weights.py \
-    --weights ./models/netG_4x_quantized_int8_optimized.pth \
-    --output_dir ./weights_export
+!python scripts/zynq_host_driver.py \
+    --image_path ./assets/sample_lr_input.png \
+    --tile_size 64 \
+    --output_path ./assets/output_zynq_sr.png \
+    --sim
 ```
 
-**Kết quả đầu ra tại `weights_export/`:**
-- `manifest.txt`: Danh sách tổng hợp toàn bộ thông số các layer (kích thước weight, in/out channels, kernel size, stride, padding).
-- `layer_XX_*_weights_int8.txt`: Mảng giá trị trọng số nguyên INT8 (phục vụ nạp vào RAM/BRAM của FPGA).
-- `layer_XX_*_weight_scale.txt`: Các hằng số Scale của từng channel.
-- `layer_XX_*_bias_fp32.txt`: Giá trị Bias của layer.
-- `layer_XX_*_act_params.txt`: Thông số Scale & Zero-point của Activation.
+**Lệnh chạy thực tế trên bo mạch Zynq ARM PS (PYNQ Board):**
+```bash
+python scripts/zynq_host_driver.py \
+    --image_path ./chest_xray.png \
+    --bitstream ./srgan_accelerator.bit \
+    --tile_size 64 \
+    --output_path ./sr_output.png
+```
