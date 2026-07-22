@@ -32,15 +32,13 @@ def fuse_conv_bn_eval(conv, bn):
         beta = torch.zeros(conv.out_channels, device=w.device)
 
     std = torch.sqrt(var_val + eps)
-    t = (gamma / std).reshape(-1, 1, 1, 1)
     
-    # Adjust for depthwise vs standard convolution
     if conv.groups > 1 and conv.groups == conv.in_channels:
         # Depthwise conv weight shape: (in_channels, 1, K, K)
         t_conv = (gamma / std).reshape(-1, 1, 1, 1)
     else:
-        # Standard or pointwise conv weight shape: (out_channels, in_channels, K, K)
-        t_conv = t
+        # Standard or pointwise conv weight shape: (out_channels, in_channels/groups, K, K)
+        t_conv = (gamma / std).reshape(-1, 1, 1, 1)
 
     fused_conv.weight = nn.Parameter(w * t_conv)
 
@@ -62,19 +60,15 @@ def fuse_generator_bn(generator):
 
     def _fuse_conv_block(block):
         if hasattr(block, 'bn') and isinstance(block.bn, nn.BatchNorm2d):
-            # Fuse pointwise or depthwise conv
             block.cnn.pointwise = fuse_conv_bn_eval(block.cnn.pointwise, block.bn)
             block.bn = nn.Identity()
 
-    # Fuse in initial convblock if any
     _fuse_conv_block(net.initial)
 
-    # Fuse in residual blocks
     for res_block in net.residual:
         _fuse_conv_block(res_block.block1)
         _fuse_conv_block(res_block.block2)
 
-    # Fuse in intermediate convblock
     _fuse_conv_block(net.convblock)
 
     return net
@@ -82,9 +76,10 @@ def fuse_generator_bn(generator):
 
 class QuantizedConv2d(nn.Module):
     """
-    Wrapper layer for Conv2d storing INT8 weights, scales, zero-points, and tracking activation statistics.
+    Wrapper layer for Conv2d supporting Per-Channel INT8 weight quantization
+    and tracking activation statistics.
     """
-    def __init__(self, conv: nn.Conv2d, num_bits=8):
+    def __init__(self, conv: nn.Conv2d, num_bits=8, per_channel=True):
         super(QuantizedConv2d, self).__init__()
         self.in_channels = conv.in_channels
         self.out_channels = conv.out_channels
@@ -93,32 +88,38 @@ class QuantizedConv2d(nn.Module):
         self.padding = conv.padding
         self.groups = conv.groups
         self.num_bits = num_bits
+        self.per_channel = per_channel
 
-        # 1. Quantize weights per-tensor (or per-channel)
         w_fp32 = conv.weight.data.clone()
-        w_min = w_fp32.min().item()
-        w_max = w_fp32.max().item()
 
-        # Symmetric INT8 quantization for weights: [-127, 127]
-        max_abs = max(abs(w_min), abs(w_max))
-        if max_abs == 0:
-            scale_w = 1.0
+        if per_channel:
+            # Per-Channel Quantization: Scale for each output channel [out_channels, 1, 1, 1]
+            w_flat = w_fp32.view(self.out_channels, -1)
+            max_abs = torch.max(torch.abs(w_flat), dim=1)[0]
+            scale_w = torch.where(max_abs == 0, torch.tensor(1.0, device=w_fp32.device), max_abs / 127.0)
+            scale_w_view = scale_w.view(-1, 1, 1, 1)
+
+            w_int8 = torch.clamp(torch.round(w_fp32 / scale_w_view), -127, 127).to(torch.int8)
+            self.w_dequantized = (w_int8.float() * scale_w_view)
         else:
-            scale_w = max_abs / 127.0
-        
-        w_int8 = torch.clamp(torch.round(w_fp32 / scale_w), -127, 127).to(torch.int8)
+            # Per-Tensor Quantization
+            w_min = w_fp32.min().item()
+            w_max = w_fp32.max().item()
+            max_abs = max(abs(w_min), abs(w_max))
+            scale_w = 1.0 if max_abs == 0 else max_abs / 127.0
+            scale_w_view = torch.tensor(scale_w, dtype=torch.float32)
+
+            w_int8 = torch.clamp(torch.round(w_fp32 / scale_w), -127, 127).to(torch.int8)
+            self.w_dequantized = (w_int8.float() * scale_w)
 
         self.register_buffer("weight_int8", w_int8)
-        self.register_buffer("weight_scale", torch.tensor(scale_w, dtype=torch.float32))
-        self.register_buffer("weight_zero_point", torch.tensor(0, dtype=torch.int32))
+        self.register_buffer("weight_scale", scale_w_view)
+        self.register_buffer("weight_zero_point", torch.zeros_like(scale_w_view, dtype=torch.int32))
 
         if conv.bias is not None:
             self.register_buffer("bias", conv.bias.data.clone())
         else:
             self.bias = None
-
-        # Dequantized weight for PyTorch forward pass simulation
-        self.w_dequantized = (w_int8.float() * scale_w)
 
         # Activation calibration trackers
         self.register_buffer("act_in_min", torch.tensor(float('inf')))
@@ -141,7 +142,6 @@ class QuantizedConv2d(nn.Module):
 
     def finalize_quantization(self):
         self.calibrating = False
-        # Calculate Activation Scale & Zero Point (Asymmetric uint8 [0, 255])
         def calc_scale_zp(a_min, a_max):
             a_min = min(0.0, a_min.item())
             a_max = max(0.0, a_max.item())
@@ -164,7 +164,6 @@ class QuantizedConv2d(nn.Module):
         if self.calibrating:
             self.update_act_stats(x, self.act_in_min, self.act_in_max)
 
-        # Simulate quantized conv forward pass using dequantized int8 weights
         out = nn.functional.conv2d(
             x, self.w_dequantized, self.bias,
             stride=self.stride, padding=self.padding, groups=self.groups
@@ -176,23 +175,48 @@ class QuantizedConv2d(nn.Module):
         return out
 
 
-def replace_conv2d_with_quant(module):
+def replace_conv2d_with_quant(module, per_channel=True):
     """
     Recursively replaces all nn.Conv2d layers with QuantizedConv2d.
     """
     for name, child in module.named_children():
         if isinstance(child, nn.Conv2d):
-            setattr(module, name, QuantizedConv2d(child))
+            setattr(module, name, QuantizedConv2d(child, per_channel=per_channel))
         else:
-            replace_conv2d_with_quant(child)
+            replace_conv2d_with_quant(child, per_channel=per_channel)
 
 
-def quantize_generator(weights_path, calib_dir, output_model_path, upscale_factor=4, device_str='cpu'):
+def quantize_residual_blocks_only(generator, per_channel=True):
+    """
+    Selectively quantizes ONLY the 16 Residual Blocks and Intermediate ConvBlock (FPGA Acceleration target),
+    preserving Head (initial) and Tail (upsampler, final_conv) in FP32 precision.
+    """
+    net = copy.deepcopy(generator)
+    
+    # Quantize only 16 Residual Blocks
+    print("[INFO] Quantizing 16 Residual Blocks...")
+    for res_block in net.residual:
+        replace_conv2d_with_quant(res_block, per_channel=per_channel)
+
+    # Quantize Intermediate ConvBlock
+    print("[INFO] Quantizing Intermediate ConvBlock...")
+    replace_conv2d_with_quant(net.convblock, per_channel=per_channel)
+
+    return net
+
+
+def quantize_generator(weights_path, calib_dir, output_model_path, upscale_factor=4, selective=True, per_channel=True, device_str='cpu'):
     """
     Main PTQ Quantization workflow.
+    
+    Args:
+        selective (bool): If True, preserves Head & Tail in FP32 and quantizes 16 Residual Blocks (FPGA PL target).
+        per_channel (bool): If True, uses Per-Channel weight quantization for Depthwise Conv layers.
     """
     device = torch.device(device_str)
     print(f"[INFO] Running Quantization process on device: {device}")
+    print(f"[CONFIG] Selective (Residual-only) Quantization: {selective}")
+    print(f"[CONFIG] Per-Channel Weight Quantization       : {per_channel}")
 
     # 1. Load FP32 Generator
     print(f"[INFO] Loading FP32 Generator weights from: {weights_path}")
@@ -208,10 +232,16 @@ def quantize_generator(weights_path, calib_dir, output_model_path, upscale_facto
     print("[INFO] Fusing Conv2d + BatchNorm2d layers...")
     fused_net = fuse_generator_bn(base_net)
 
-    # 3. Replace Conv2d with QuantizedConv2d
-    print("[INFO] Converting Conv2d layers to Quantized INT8 Conv layers...")
-    replace_conv2d_with_quant(fused_net)
-    fused_net.to(device)
+    # 3. Quantize layers
+    if selective:
+        print("[INFO] Performing Selective Quantization (Preserving Head & Tail FP32, Quantizing Residual Blocks)...")
+        quant_net = quantize_residual_blocks_only(fused_net, per_channel=per_channel)
+    else:
+        print("[INFO] Performing Full-Model Quantization...")
+        quant_net = copy.deepcopy(fused_net)
+        replace_conv2d_with_quant(quant_net, per_channel=per_channel)
+
+    quant_net.to(device)
 
     # 4. Calibration pass
     if not os.path.exists(calib_dir):
@@ -231,17 +261,17 @@ def quantize_generator(weights_path, calib_dir, output_model_path, upscale_facto
             lr_pil = lr_transform(hr_pil)
             lr_tensor = to_tensor(lr_pil).unsqueeze(0).to(device)
 
-            _ = fused_net(lr_tensor)
+            _ = quant_net(lr_tensor)
 
     # 5. Finalize activation scales and zero points
     print("[INFO] Finalizing INT8 Quantization scales & zero points...")
-    for m in fused_net.modules():
+    for m in quant_net.modules():
         if isinstance(m, QuantizedConv2d):
             m.finalize_quantization()
 
     # 6. Save Quantized Model
     os.makedirs(os.path.dirname(output_model_path), exist_ok=True)
-    torch.save({"model": fused_net.state_dict(), "quantized": True}, output_model_path)
+    torch.save({"model": quant_net.state_dict(), "quantized": True, "selective": selective, "per_channel": per_channel}, output_model_path)
     print(f"[INFO] Quantized INT8 model successfully saved to: {output_model_path}")
 
     # Calculate model size reduction
@@ -257,13 +287,21 @@ if __name__ == "__main__":
     parser.add_argument('--calib_dir', type=str, default='./calibration_images', help='Path to calibration images')
     parser.add_argument('--output', type=str, default='./models/netG_4x_quantized_int8.pth', help='Output quantized model path')
     parser.add_argument('--upscale_factor', type=int, default=4, help='Upscale factor')
+    parser.add_argument('--selective', action='store_true', default=True, help='Preserve Head & Tail in FP32, quantize 16 Residual Blocks')
+    parser.add_argument('--full', action='store_true', help='Quantize all layers including Head & Tail')
+    parser.add_argument('--per_channel', action='store_true', default=True, help='Use Per-Channel weight quantization for Depthwise Conv')
     parser.add_argument('--device', type=str, default='cpu', help='Device for quantization')
 
     args = parser.parse_args()
+    
+    selective_mode = not args.full
+
     quantize_generator(
         weights_path=args.weights,
         calib_dir=args.calib_dir,
         output_model_path=args.output,
         upscale_factor=args.upscale_factor,
+        selective=selective_mode,
+        per_channel=args.per_channel,
         device_str=args.device
     )

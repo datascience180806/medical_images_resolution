@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from model_architecture import Generator
 from model_metrics import ssim
-from quantize_model import fuse_generator_bn, replace_conv2d_with_quant
+from quantize_model import fuse_generator_bn, replace_conv2d_with_quant, quantize_residual_blocks_only
 
 
 def is_image_file(filename):
@@ -21,7 +21,7 @@ def is_image_file(filename):
 
 def load_model_from_checkpoint(weights_path, upscale_factor=4, device=torch.device('cpu')):
     """
-    Loads FP32 or Quantized INT8 Generator model based on checkpoint content.
+    Loads FP32 or Quantized INT8 Generator model based on checkpoint metadata and structure.
     """
     if not os.path.exists(weights_path):
         raise FileNotFoundError(f"Weights file not found at: {weights_path}")
@@ -29,34 +29,43 @@ def load_model_from_checkpoint(weights_path, upscale_factor=4, device=torch.devi
     checkpoint = torch.load(weights_path, map_location=device)
 
     is_quantized = False
+    is_selective = True
+    is_per_channel = True
     state_dict = checkpoint
 
     if isinstance(checkpoint, dict):
         if checkpoint.get("quantized") is True:
             is_quantized = True
+            is_selective = checkpoint.get("selective", True)
+            is_per_channel = checkpoint.get("per_channel", True)
             state_dict = checkpoint["model"]
         elif "model" in checkpoint:
             state_dict = checkpoint["model"]
 
-    # Check if state_dict keys contain quantized layer markers
     if any("weight_int8" in key for key in state_dict.keys()):
         is_quantized = True
 
     base_model = Generator(upscale_factor=upscale_factor).to(device)
 
     if is_quantized:
-        print("[INFO] Detected Quantized INT8 model structure. Preparing model layout...")
+        print(f"[INFO] Detected Quantized INT8 model layout (Selective={is_selective}, Per-Channel={is_per_channel})...")
         fused_model = fuse_generator_bn(base_model)
-        replace_conv2d_with_quant(fused_model)
-        fused_model.to(device)
         
-        # Turn off calibration on quantized layers for inference
-        for m in fused_model.modules():
+        if is_selective:
+            quant_model = quantize_residual_blocks_only(fused_model, per_channel=is_per_channel)
+        else:
+            quant_model = fused_model
+            replace_conv2d_with_quant(quant_model, per_channel=is_per_channel)
+            
+        quant_model.to(device)
+        
+        # Turn off calibration on quantized layers for evaluation
+        for m in quant_model.modules():
             if hasattr(m, "calibrating"):
                 m.calibrating = False
 
-        fused_model.load_state_dict(state_dict)
-        model = fused_model
+        quant_model.load_state_dict(state_dict)
+        model = quant_model
     else:
         print("[INFO] Loaded standard FP32 model structure.")
         base_model.load_state_dict(state_dict)
@@ -70,20 +79,17 @@ def evaluate_model(eval_dir, weights_path, output_csv, upscale_factor=4, device_
     """
     Evaluates Generator model (FP32 or Quantized INT8) on evaluation dataset.
     """
-    # 1. Setup device
     if device_str == 'auto':
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     else:
         device = torch.device(device_str)
     print(f"[INFO] Using device: {device}")
 
-    # 2. Load model
     print(f"[INFO] Loading model weights from: {weights_path}")
     model, is_quantized = load_model_from_checkpoint(weights_path, upscale_factor=upscale_factor, device=device)
 
-    model_type_str = "INT8 Quantized" if is_quantized else "FP32 Baseline"
+    model_type_str = "INT8 Quantized (Optimized)" if is_quantized else "FP32 Baseline"
 
-    # 3. Collect evaluation images
     if not os.path.exists(eval_dir):
         raise FileNotFoundError(f"Evaluation directory not found at: {eval_dir}")
 
@@ -96,7 +102,6 @@ def evaluate_model(eval_dir, weights_path, output_csv, upscale_factor=4, device_
         print("[WARNING] No valid images found for evaluation.")
         return
 
-    # Transforms for downsampling to LR (256x256)
     lr_transform = transforms.Resize((256, 256), interpolation=Image.BICUBIC)
 
     results = []
@@ -108,20 +113,15 @@ def evaluate_model(eval_dir, weights_path, output_csv, upscale_factor=4, device_
         for img_path in tqdm(image_paths, desc=f"Evaluating [{model_type_str}]"):
             filename = os.path.basename(img_path)
 
-            # Load HR image
             hr_pil = Image.open(img_path).convert('RGB')
-            # Downsample to LR
             lr_pil = lr_transform(hr_pil)
 
-            # Convert to tensors [1, C, H, W]
             hr_tensor = to_tensor(hr_pil).unsqueeze(0).to(device)
             lr_tensor = to_tensor(lr_pil).unsqueeze(0).to(device)
 
-            # Run inference
             sr_tensor = model(lr_tensor)
             sr_tensor = torch.clamp(sr_tensor, 0.0, 1.0)
 
-            # Calculate MSE & PSNR
             mse_val = torch.mean((sr_tensor - hr_tensor) ** 2).item()
             if mse_val == 0:
                 psnr_val = 100.0
@@ -129,7 +129,6 @@ def evaluate_model(eval_dir, weights_path, output_csv, upscale_factor=4, device_
                 max_val = hr_tensor.max().item()
                 psnr_val = 10.0 * math.log10((max_val ** 2) / mse_val)
 
-            # Calculate SSIM
             ssim_val = ssim(sr_tensor, hr_tensor).item()
 
             total_psnr += psnr_val
@@ -145,16 +144,15 @@ def evaluate_model(eval_dir, weights_path, output_csv, upscale_factor=4, device_
     mean_psnr = total_psnr / len(image_paths)
     mean_ssim = total_ssim / len(image_paths)
 
-    print("\n" + "=" * 55)
+    print("\n" + "=" * 60)
     print(f"           EVALUATION RESULTS ({model_type_str})       ")
-    print("=" * 55)
+    print("=" * 60)
     print(f" Model Type             : {model_type_str}")
     print(f" Total Images Evaluated : {len(image_paths)}")
     print(f" Mean PSNR              : {mean_psnr:.4f} dB")
     print(f" Mean SSIM              : {mean_ssim:.4f}")
-    print("=" * 55 + "\n")
+    print("=" * 60 + "\n")
 
-    # 4. Save results to CSV
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     df = pd.DataFrame(results)
     

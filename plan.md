@@ -12,17 +12,17 @@ PC (Python) → Zynq PS (ARM - AXI DMA) → Zynq PL (FPGA Accelerator) → Zynq 
 
 ## 2. Hiện trạng & Kết quả đã đạt được
 
-### 2.1. Đánh giá Baseline Model (FP32) trên Kaggle (ĐÃ HOÀN THÀNH)
+### 2.1. Đánh giá Baseline Model (FP32) trên Kaggle
 Chạy trên 110 ảnh `eval_images/`:
 
-| Chỉ số | Kết quả FP32 |
-|--------|--------------|
+| Chỉ số | Kết quả FP32 Baseline |
+|--------|-----------------------|
 | **Mean PSNR** | **41.8503 dB** |
 | **Mean SSIM** | **0.9697** |
 
 ---
 
-## 3. Các bước thực thi tiếp theo trên Kaggle
+## 3. Các bước thực thi Lượng tử hóa Tối ưu (Per-Channel & Selective Quantization)
 
 ### Bước 1: Pull mã nguồn mới nhất từ GitHub
 Trong Kaggle Notebook:
@@ -33,37 +33,30 @@ Trong Kaggle Notebook:
 
 ---
 
-### Bước 2: Chạy Quantization sang INT8
-Chạy script `scripts/quantize_model.py` để:
-1. Fuse toàn bộ các lớp `Conv2d + BatchNorm2d` (chuẩn hóa kiến trúc cho hardware FPGA).
-2. Chuyển đổi trọng số sang `int8` (sử dụng Symmetric Quantization [-127, 127]).
-3. Chạy PTQ Calibration trên 150 ảnh `calibration_images/` để tính toán dải activation (Scale & Zero-point).
-4. Lưu mô hình INT8 vào `models/netG_4x_quantized_int8.pth`.
+### Bước 2: Chạy Quantization Tối ưu sang INT8
+Script `scripts/quantize_model.py` đã được bổ sung 2 kỹ thuật tối ưu cốt lõi:
+1. **Per-Channel Weight Quantization (`--per_channel`):** Tính toán Scale riêng biệt cho từng channel của Depthwise Conv, khắc phục hoàn toàn hiện tượng triệt tiêu trọng số channel nhỏ về 0.
+2. **Selective Quantization (`--selective`):** Giữ nguyên độ chính xác cao FP32 cho lớp vào (`initial`) và lớp ra (`upsampler`, `final_conv` + `tanh`), chỉ Quantize **16 khối Residual Blocks** và khối **ConvBlock** trung gian (đúng mục tiêu nạp vào mạch tăng tốc FPGA Zynq PL).
 
 **Lệnh thực thi trong Kaggle Notebook:**
 ```bash
 !python scripts/quantize_model.py \
     --weights ./models/netG_4x_epoch5.pth.tar \
     --calib_dir ./calibration_images \
-    --output ./models/netG_4x_quantized_int8.pth
+    --output ./models/netG_4x_quantized_int8_optimized.pth \
+    --selective \
+    --per_channel
 ```
 
 ---
 
-### Bước 3: Đánh giá mô hình INT8 vừa Quantize
-Chạy lại script `scripts/evaluate_model.py` cho mô hình INT8 để đo mức suy giảm PSNR/SSIM:
+### Bước 3: Đánh giá mô hình INT8 Tối ưu
+Chạy lại script `scripts/evaluate_model.py` để kiểm tra độ chính xác sau khi nâng cấp thuật toán Quantize:
 
 **Lệnh thực thi trong Kaggle Notebook:**
 ```bash
 !python scripts/evaluate_model.py \
     --eval_dir ./eval_images \
-    --weights ./models/netG_4x_quantized_int8.pth \
-    --output_csv ./logs/quantized_int8_metrics.csv
+    --weights ./models/netG_4x_quantized_int8_optimized.pth \
+    --output_csv ./logs/quantized_int8_optimized_metrics.csv
 ```
-
----
-
-### Phase 5: Trích xuất trọng số cho FPGA Zynq (SẮP THỰC HIỆN)
-Sau khi xác nhận chất lượng mô hình INT8:
-- Viết `scripts/extract_weights.py` xuất file `.txt` chứa weights, scale, zero-point của từng layer.
-- Viết script `scripts/image_to_txt.py` và `scripts/txt_to_image.py` chuyển đổi định dạng dữ liệu cho AXI DMA.
