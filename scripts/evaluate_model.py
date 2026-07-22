@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from model_architecture import Generator
 from model_metrics import ssim
+from quantize_model import fuse_generator_bn, replace_conv2d_with_quant
 
 
 def is_image_file(filename):
@@ -18,16 +19,56 @@ def is_image_file(filename):
     return any(filename.endswith(ext) for ext in valid_extensions)
 
 
-def evaluate_baseline(eval_dir, weights_path, output_csv, upscale_factor=4, device_str='auto'):
+def load_model_from_checkpoint(weights_path, upscale_factor=4, device=torch.device('cpu')):
     """
-    Evaluates the baseline Generator model (FP32) on a directory of evaluation images.
-    
-    Args:
-        eval_dir (str): Path to directory containing evaluation HR images.
-        weights_path (str): Path to Generator weights checkpoint (.pth.tar).
-        output_csv (str): Path to output CSV file for metrics.
-        upscale_factor (int): Upscale factor (default: 4).
-        device_str (str): Device to use ('cuda', 'cpu', or 'auto').
+    Loads FP32 or Quantized INT8 Generator model based on checkpoint content.
+    """
+    if not os.path.exists(weights_path):
+        raise FileNotFoundError(f"Weights file not found at: {weights_path}")
+
+    checkpoint = torch.load(weights_path, map_location=device)
+
+    is_quantized = False
+    state_dict = checkpoint
+
+    if isinstance(checkpoint, dict):
+        if checkpoint.get("quantized") is True:
+            is_quantized = True
+            state_dict = checkpoint["model"]
+        elif "model" in checkpoint:
+            state_dict = checkpoint["model"]
+
+    # Check if state_dict keys contain quantized layer markers
+    if any("weight_int8" in key for key in state_dict.keys()):
+        is_quantized = True
+
+    base_model = Generator(upscale_factor=upscale_factor).to(device)
+
+    if is_quantized:
+        print("[INFO] Detected Quantized INT8 model structure. Preparing model layout...")
+        fused_model = fuse_generator_bn(base_model)
+        replace_conv2d_with_quant(fused_model)
+        fused_model.to(device)
+        
+        # Turn off calibration on quantized layers for inference
+        for m in fused_model.modules():
+            if hasattr(m, "calibrating"):
+                m.calibrating = False
+
+        fused_model.load_state_dict(state_dict)
+        model = fused_model
+    else:
+        print("[INFO] Loaded standard FP32 model structure.")
+        base_model.load_state_dict(state_dict)
+        model = base_model
+
+    model.eval()
+    return model, is_quantized
+
+
+def evaluate_model(eval_dir, weights_path, output_csv, upscale_factor=4, device_str='auto'):
+    """
+    Evaluates Generator model (FP32 or Quantized INT8) on evaluation dataset.
     """
     # 1. Setup device
     if device_str == 'auto':
@@ -37,19 +78,10 @@ def evaluate_baseline(eval_dir, weights_path, output_csv, upscale_factor=4, devi
     print(f"[INFO] Using device: {device}")
 
     # 2. Load model
-    print(f"[INFO] Initializing Generator (upscale_factor={upscale_factor})...")
-    model = Generator(upscale_factor=upscale_factor).to(device)
+    print(f"[INFO] Loading model weights from: {weights_path}")
+    model, is_quantized = load_model_from_checkpoint(weights_path, upscale_factor=upscale_factor, device=device)
 
-    if not os.path.exists(weights_path):
-        raise FileNotFoundError(f"Weights file not found at: {weights_path}")
-
-    print(f"[INFO] Loading weights from: {weights_path}")
-    checkpoint = torch.load(weights_path, map_location=device)
-    if "model" in checkpoint:
-        model.load_state_dict(checkpoint["model"])
-    else:
-        model.load_state_dict(checkpoint)
-    model.eval()
+    model_type_str = "INT8 Quantized" if is_quantized else "FP32 Baseline"
 
     # 3. Collect evaluation images
     if not os.path.exists(eval_dir):
@@ -71,9 +103,9 @@ def evaluate_baseline(eval_dir, weights_path, output_csv, upscale_factor=4, devi
     total_psnr = 0.0
     total_ssim = 0.0
 
-    print("[INFO] Starting evaluation...")
+    print(f"[INFO] Starting evaluation ({model_type_str})...")
     with torch.no_grad():
-        for img_path in tqdm(image_paths, desc="Evaluating"):
+        for img_path in tqdm(image_paths, desc=f"Evaluating [{model_type_str}]"):
             filename = os.path.basename(img_path)
 
             # Load HR image
@@ -113,19 +145,19 @@ def evaluate_baseline(eval_dir, weights_path, output_csv, upscale_factor=4, devi
     mean_psnr = total_psnr / len(image_paths)
     mean_ssim = total_ssim / len(image_paths)
 
-    print("\n" + "=" * 50)
-    print("           BASELINE EVALUATION RESULTS (FP32)       ")
-    print("=" * 50)
+    print("\n" + "=" * 55)
+    print(f"           EVALUATION RESULTS ({model_type_str})       ")
+    print("=" * 55)
+    print(f" Model Type             : {model_type_str}")
     print(f" Total Images Evaluated : {len(image_paths)}")
     print(f" Mean PSNR              : {mean_psnr:.4f} dB")
     print(f" Mean SSIM              : {mean_ssim:.4f}")
-    print("=" * 50 + "\n")
+    print("=" * 55 + "\n")
 
     # 4. Save results to CSV
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     df = pd.DataFrame(results)
     
-    # Append summary row at the bottom
     summary_df = pd.DataFrame([{
         "Filename": "AVERAGE_SUMMARY",
         "MSE": df["MSE"].mean(),
@@ -138,15 +170,15 @@ def evaluate_baseline(eval_dir, weights_path, output_csv, upscale_factor=4, devi
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate Baseline FP32 Generator Model on Evaluation Dataset")
-    parser.add_argument('--eval_dir', type=str, default='./eval_images', help='Path to directory containing HR evaluation images')
-    parser.add_argument('--weights', type=str, default='./models/netG_4x_epoch5.pth.tar', help='Path to Generator checkpoint')
-    parser.add_argument('--output_csv', type=str, default='./logs/baseline_fp32_metrics.csv', help='Output CSV path for metrics')
-    parser.add_argument('--upscale_factor', type=int, default=4, help='Upscale factor (default: 4)')
-    parser.add_argument('--device', type=str, default='auto', help="Device to run evaluation ('cuda', 'cpu', 'auto')")
+    parser = argparse.ArgumentParser(description="Evaluate Generator Model (FP32 or INT8 Quantized)")
+    parser.add_argument('--eval_dir', type=str, default='./eval_images', help='Path to evaluation images')
+    parser.add_argument('--weights', type=str, default='./models/netG_4x_epoch5.pth.tar', help='Path to checkpoint')
+    parser.add_argument('--output_csv', type=str, default='./logs/evaluation_metrics.csv', help='Output CSV path')
+    parser.add_argument('--upscale_factor', type=int, default=4, help='Upscale factor')
+    parser.add_argument('--device', type=str, default='auto', help="Device ('cuda', 'cpu', 'auto')")
 
     args = parser.parse_args()
-    evaluate_baseline(
+    evaluate_model(
         eval_dir=args.eval_dir,
         weights_path=args.weights,
         output_csv=args.output_csv,
