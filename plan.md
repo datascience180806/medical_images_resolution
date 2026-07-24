@@ -29,13 +29,24 @@ PC (Python) → Zynq PS (ARM - AXI DMA) → Zynq PL (FPGA Accelerator) → Zynq 
 
 ---
 
-### Bước 2: Chạy Python Host Driver cho Zynq PS (OpenCV Tiling & AXI DMA)
-Script `scripts/zynq_host_driver.py` thực hiện:
-1. Dùng **OpenCV** đọc ảnh X-quang gốc.
-2. Cắt ảnh thành các mảnh nhỏ kích thước $64 \times 64$ (`--tile_size 64`).
-3. Đẩy từng mảng array qua kênh **AXI DMA** (`pynq.allocate` & `dma.sendchannel.transfer`) xuống phần cứng **Zynq PL FPGA Accelerator**.
-4. Nhận kết quả từ AXI DMA và dùng OpenCV **ghép lại thành ảnh Super-Resolution** hoàn chỉnh ($1024 \times 1024$).
+### Bước 2: Xuất trọng số chuẩn Q7 (Cố định Scale 128) ra một file duy nhất
+Để đáp ứng chính xác yêu cầu kỹ thuật trong tài liệu phần cứng `HUẤN LUYỆN & ÉP KIỂU TRỌNG SỐ (QUANTIZATION).txt`, ta sử dụng script `scripts/export_q7.py` để:
+1. Đọc mô hình Generator gốc.
+2. Tự động nén lớp `BatchNorm` (BatchNorm Fusion).
+3. Áp dụng công thức ép kiểu chuẩn Q7 cố định:
+   $$W_{\text{Q7}} = \text{Clamp}(\text{Round}(W_{\text{Float32}} \times 128), -128, 127)$$
+4. Làm phẳng và xuất toàn bộ trọng số + bias của mô hình ra duy nhất một tệp `srgan_q7_weights.txt`.
 
+**Lệnh thực thi trong Kaggle Notebook / PC:**
+```bash
+!python scripts/export_q7.py \
+    --weights ./models/netG_4x_epoch5.pth.tar \
+    --output ./models/srgan_q7_weights.txt
+```
+
+---
+
+### Bước 3: Chạy Python Host Driver cho Zynq PS (OpenCV Tiling & AXI DMA)
 **Lệnh chạy mô phỏng (Simulation Mode / Kaggle / PC):**
 ```bash
 !python scripts/zynq_host_driver.py \
