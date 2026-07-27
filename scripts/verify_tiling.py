@@ -16,29 +16,28 @@ def test_tiling_exactness(image_path, tile_size=64):
     print("       ROUND-TRIP TILING & STITCHING VERIFICATION TEST      ")
     print("=" * 60)
     print(f"[TEST] Loading test image: {image_path}")
-    img_bgr = cv2.imread(image_path)
-    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    img_gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
-    orig_h, orig_w, channels = img_rgb.shape
-    print(f"[TEST] Original Image Dimensions: {orig_w}x{orig_h} ({channels} channels)")
+    orig_h, orig_w = img_gray.shape
+    print(f"[TEST] Original Image Dimensions: {orig_w}x{orig_h} (Grayscale)")
 
     # 1. Slice into tiles (scale_factor = 1 for identity round-trip test)
     print(f"[TEST] Slicing image into {tile_size}x{tile_size} tiles...")
-    tiles, grid_dim, orig_dim = slice_image_into_tiles(img_rgb, tile_size=tile_size)
+    tiles, grid_dim, orig_dim = slice_image_into_tiles(img_gray, tile_size=tile_size)
     print(f"[TEST] Total tiles generated: {len(tiles)} ({grid_dim[0]}x{grid_dim[1]} grid)")
 
     # 2. Stitch tiles back without modifying them (scale_factor = 1)
     print("[TEST] Re-stitching tiles back into full image...")
-    reconstructed_rgb = stitch_tiles_into_image(tiles, grid_dim, orig_dim, scale_factor=1)
+    reconstructed_gray = stitch_tiles_into_image(tiles, grid_dim, orig_dim, scale_factor=1)
 
     # 3. Calculate absolute pixel difference
-    diff = np.abs(img_rgb.astype(np.int32) - reconstructed_rgb.astype(np.int32))
+    diff = np.abs(img_gray.astype(np.int32) - reconstructed_gray.astype(np.int32))
     max_diff = np.max(diff)
     mean_diff = np.mean(diff)
-    mse = np.mean((img_rgb.astype(np.float64) - reconstructed_rgb.astype(np.float64)) ** 2)
+    mse = np.mean((img_gray.astype(np.float64) - reconstructed_gray.astype(np.float64)) ** 2)
 
     print("\n" + "-" * 60)
-    print(f" Reconstruction Shape : {reconstructed_rgb.shape[1]}x{reconstructed_rgb.shape[0]}")
+    print(f" Reconstruction Shape : {reconstructed_gray.shape[1]}x{reconstructed_gray.shape[0]}")
     print(f" Max Pixel Difference : {max_diff} (Target: 0)")
     print(f" Mean Pixel Difference: {mean_diff:.6f} (Target: 0.0)")
     print(f" Mean Squared Error   : {mse:.6f} (Target: 0.0)")
