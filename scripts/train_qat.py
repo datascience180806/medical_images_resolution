@@ -136,7 +136,13 @@ def train_qat(weights_path, train_dir, val_dir, output_dir, upscale_factor=4, ep
         device = torch.device(device_str)
     print(f"[INFO] Running QAT on device: {device}")
 
-    # 1. Prepare QAT Model
+    # 1. Clear GPU memory cache
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # 2. Prepare QAT Model
     model = prepare_qat_model(weights_path, upscale_factor, device).to(device)
 
     # 2. Data Loaders
