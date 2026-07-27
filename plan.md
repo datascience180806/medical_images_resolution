@@ -16,10 +16,11 @@ PC (Python) → Zynq PS (ARM - AXI DMA) → Zynq PL (FPGA Accelerator) → Zynq 
 |---------|:---------:|:---------:|:----------------:|----------|
 | **FP32 Baseline** | **41.8503 dB** | **0.9697** | **~0.90 MB** | Chuẩn mốc đánh giá |
 | **INT8 Quantized (Optimized)** | **41.9110 dB** | **0.9696** | **~0.25 MB** | **Bảo toàn 100% chất lượng, giảm 3.6x bộ nhớ** |
+| **Q7 Quantized (Fixed Scale 128 - Không QAT)** | **28.5820 dB** | **0.8749** | **~0.25 MB** | **Suy giảm đáng kể (-13.27 dB)** |
 
 ---
 
-## 3. Các bước thực thi trên Kaggle / PC / Zynq Board
+## 3. Các bước thực thi trên Kaggle Notebook
 
 ### Bước 1: Pull mã nguồn mới nhất từ GitHub
 ```bash
@@ -29,24 +30,34 @@ PC (Python) → Zynq PS (ARM - AXI DMA) → Zynq PL (FPGA Accelerator) → Zynq 
 
 ---
 
-### Bước 2: Xuất trọng số chuẩn Q7 (Cố định Scale 128) ra một file duy nhất
-**Lệnh thực thi trong Kaggle Notebook / PC:**
+### Bước 2: Huấn luyện thích nghi lượng tử hóa (QAT - Quantization-Aware Training)
+Để khôi phục chỉ số của mô hình khi bắt buộc sử dụng **Scale cố định Q7 (128.0)** cho phần cứng, ta thực hiện tinh chỉnh (fine-tune) mô hình bằng kỹ thuật QAT. 
+
+Script `scripts/train_qat.py` sẽ sử dụng Straight-Through Estimator (STE) để mô phỏng lượng tử hóa Q7 trong quá trình huấn luyện bằng chính tập dữ liệu ảnh `calibration_images` có sẵn (không cần tải 45GB dữ liệu).
+
+**Lệnh thực thi QAT trên Kaggle (khuyên dùng GPU):**
 ```bash
-!python scripts/export_q7.py \
+!python scripts/train_qat.py \
     --weights ./models/netG_4x_epoch5.pth.tar \
-    --output ./models/srgan_q7_weights.txt
+    --train_dir ./calibration_images \
+    --val_dir ./eval_images \
+    --output_dir ./models \
+    --epochs 15 \
+    --batch_size 8 \
+    --lr 1e-5
 ```
+*Sau khi chạy xong, mô hình QAT tốt nhất sẽ được lưu tại `models/netG_4x_qat_best.pth` và tự động trích xuất file trọng số Q7 hoàn hảo tại `models/srgan_q7_weights_qat.txt`.*
 
 ---
 
-### Bước 3: Đánh giá kiểm thử bộ trọng số Q7 (.txt) để xác thực chất lượng
-Trước khi nạp xuống mạch FPGA, ta cần chạy thử nghiệm suy diễn (Inference) để đảm bảo bộ trọng số Q7 không làm sụp đổ mô hình. Lệnh này sẽ tự động đọc file `.txt`, giải lượng tử hóa về FP32 (`float = q7 / 128.0`) và chạy thử:
+### Bước 3: Đánh giá kiểm thử bộ trọng số Q7 sau khi chạy QAT
+Chạy lệnh đánh giá để kiểm nghiệm PSNR & SSIM mới sau khi chạy QAT:
 
 ```bash
 !python scripts/evaluate_q7.py \
     --eval_dir ./eval_images \
-    --q7_weights ./models/srgan_q7_weights.txt \
-    --output_csv ./logs/q7_evaluation_metrics.csv
+    --q7_weights ./models/srgan_q7_weights_qat.txt \
+    --output_csv ./logs/q7_qat_evaluation_metrics.csv
 ```
 
 ---
@@ -59,13 +70,4 @@ Trước khi nạp xuống mạch FPGA, ta cần chạy thử nghiệm suy diễ
     --tile_size 64 \
     --output_path ./assets/output_zynq_sr.png \
     --sim
-```
-
-**Lệnh chạy thực tế trên bo mạch Zynq ARM PS (PYNQ Board):**
-```bash
-python scripts/zynq_host_driver.py \
-    --image_path ./chest_xray.png \
-    --bitstream ./srgan_accelerator.bit \
-    --tile_size 64 \
-    --output_path ./sr_output.png
 ```
