@@ -7,26 +7,6 @@
 ### 1.1. Cấu trúc Mô hình Baseline (Generator)
 Mạng Generator của Swift-SRGAN được thiết kế để nâng độ phân giải ảnh y tế X-quang từ $256 \times 256$ (LR) lên $1024 \times 1024$ (SR) với hệ số phóng to (upscale factor) $\times 4$. Toàn bộ trọng số sử dụng kiểu dữ liệu số thực dấu phẩy động 32-bit (`float32`).
 
-Cấu trúc chi tiết gồm 5 thành phần chính:
-1. **Initial ConvBlock (Head):**
-   - Lớp tích chập phân tách chiều sâu (SeperableConv2d) kích thước kernel $9 \times 9$, stride $1$, padding $4$.
-   - Input: $3$ channels $\rightarrow$ Output: $64$ channels.
-   - Hàm kích hoạt: `PReLU(num_parameters=64)`. Không sử dụng BatchNorm.
-2. **16 Khối Residual Blocks (x16 Residual Blocks - Target FPGA PL):**
-   - Mỗi Residual Block gồm 2 ConvBlock nối tiếp nhau:
-     - **Block 1:** SeperableConv2d ($3 \times 3$, padding 1) $\rightarrow$ BatchNorm2d(64) $\rightarrow$ PReLU(64).
-     - **Block 2:** SeperableConv2d ($3 \times 3$, padding 1) $\rightarrow$ BatchNorm2d(64) (không dùng hàm kích hoạt).
-   - Đường nối tắt (Skip Connection): $out = \text{Block 2}(x) + x$ (phép cộng element-wise).
-3. **Intermediate ConvBlock:**
-   - SeperableConv2d ($3 \times 3$, padding 1) $\rightarrow$ BatchNorm2d(64).
-   - Cộng đường nối tắt từ lớp Initial: $out = \text{Intermediate}(x) + \text{Initial}(x)$.
-4. **Upsampler Blocks (x2 Upsample Blocks - Tail):**
-   - Phóng to độ phân giải $256 \times 256 \rightarrow 512 \times 512 \rightarrow 1024 \times 1024$.
-   - Mỗi block gồm: SeperableConv2d ($3 \times 3$, $64 \rightarrow 256$ channels) $\rightarrow$ `PixelShuffle(scale_factor=2)` $\rightarrow$ `PReLU(64)`.
-5. **Final ConvBlock:**
-   - SeperableConv2d ($9 \times 9$, $64 \rightarrow 3$ channels).
-   - Hàm kích hoạt đầu ra: $out = \frac{\tanh(x) + 1}{2}$ để scale giá trị pixel về khoảng $[0, 1]$.
-
 ### 1.2. Đánh giá Mô hình Baseline (FP32)
 * **Tập dữ liệu kiểm thử:** 110 ảnh X-quang y tế (`eval_images/`)
 * **Dung lượng file trọng số:** ~0.9 MB (`netG_4x_epoch5.pth.tar`)
@@ -39,49 +19,37 @@ Cấu trúc chi tiết gồm 5 thành phần chính:
 
 ---
 
-## 2. Mô hình sau khi Quantize Tối ưu (Optimized INT8 PTQ)
+## 2. Kết quả Thực nghiệm và So sánh các Phương pháp Lượng tử hóa
 
-### 2.1. Cấu trúc Mô hình sau Quantize Tối ưu
-Áp dụng phương pháp Lượng tử hóa tối ưu kết hợp **Per-Channel Weight Quantization** và **Selective Quantization**:
+Dưới đây là bảng so sánh chi tiết chất lượng ảnh khôi phục và dung lượng lưu trữ giữa Mô hình gốc (FP32) và 2 thuật toán lượng tử hóa:
 
-1. **BatchNorm Fusion:**
-   - Toàn bộ các lớp `BatchNorm2d` trong 16 Residual Blocks và Intermediate Block được nén (fuse) trực tiếp vào trọng số của lớp `Conv2d` đứng trước:
-     $$W_{\text{fused}} = W \cdot \frac{\gamma}{\sqrt{\sigma^2 + \epsilon}}, \quad b_{\text{fused}} = (b - \mu) \cdot \frac{\gamma}{\sqrt{\sigma^2 + \epsilon}} + \beta$$
-2. **Per-Channel Weight Quantization:**
-   - TÍnh toán Scale và Zero-point riêng biệt cho từng channel xuất ra (output channel) của mỗi lớp `Conv2d` trong 16 khối Residual Blocks:
-     $$\text{scale}_w[c] = \frac{\max(|W_c|)}{127}, \quad W_{\text{int8}}[c] = \text{clamp}\left(\text{round}\left(\frac{W_c}{\text{scale}_w[c]}\right), -127, 127\right)$$
-3. **Selective Quantization (Phân vùng phần cứng FPGA Zynq):**
-   - **Tập trung Quantize INT8:** 16 khối Residual Blocks và Intermediate ConvBlock (đúng mục tiêu nạp vào mạch tăng tốc FPGA Zynq PL).
-   - **Bảo vệ FP32 (Head & Tail):** Lớp đầu `Initial` và phần nâng độ phân giải `Upsampler` + `Final Conv` + `Tanh` (xử lý trên Zynq PS / Python).
-
-### 2.2. Kết quả Đánh giá Thực tế Mô hình INT8 Tối ưu
-* **Tập dữ liệu kiểm thử:** 110 ảnh X-quang y tế (`eval_images/`)
-* **Dung lượng file trọng số:** ~0.25 MB (`netG_4x_quantized_int8_optimized.pth`) — **Giảm 3.6 lần dung lượng**
-* **Kết quả đo lường thực tế:**
-
-| Chỉ số | Baseline (FP32) | INT8 Quantized (Optimized) | Chênh lệch / Đánh giá |
+| Chỉ số | Baseline (FP32) | INT8 Quantized (Optimized PTQ) | Q7 Quantized (Fixed Scale 128) |
 | :--- | :---: | :---: | :---: |
-| **Mean PSNR** | **41.8503 dB** | **41.9110 dB** | **+0.0607 dB** (Bảo toàn tuyệt đối chất lượng ảnh) |
-| **Mean SSIM** | **0.9697** | **0.9696** | **-0.0001** (Giữ nguyên 96.96% cấu trúc y tế) |
-| **Dung lượng** | **~0.90 MB** | **~0.25 MB** | **Tiết kiệm 72.2% bộ nhớ (Giảm 3.6x)** |
+| **Mean PSNR** | **41.8503 dB** | **41.9110 dB** | **28.5820 dB** |
+| **Mean SSIM** | **0.9697** | **0.9696** | **0.8749** |
+| **Dung lượng Model** | **~0.90 MB** | **~0.25 MB** | **~0.25 MB** |
+| **Đánh giá Chất lượng** | **Xuất sắc** | **Bảo toàn tuyệt đối (Đạt yêu cầu)** | **Suy giảm đáng kể (Hạn chế)** |
 
 ---
 
-## 3. Phân tích Lý do Thuật toán Tối ưu Đạt Kết quả Xuất sắc
+## 3. Phân tích So sánh chất lượng mô hình Q7 Fixed-Point
 
-Việc duy trì chỉ số **PSNR = 41.91 dB** và **SSIM = 0.9696** sau khi nén mô hình xuống INT8 đạt được nhờ 2 yếu tố then chốt:
+So với Mô hình gốc (FP32) và mô hình INT8 tối ưu hóa động, **bộ trọng số Q7 cố định bị sụt giảm chất lượng khá lớn**:
+*   **PSNR giảm từ 41.85 dB xuống 28.58 dB** (sụt giảm **-13.27 dB**).
+*   **SSIM giảm từ 0.9697 xuống 0.8749** (giảm **-0.0948**).
 
-### 3.1. Giải quyết triệt để hạn chế của Depthwise Conv nhờ Per-Channel Quantization
-- Trong các lớp Depthwise Convolution ($groups = in\_channels$), mỗi bộ lọc chỉ xử lý đúng 1 channel duy nhất. Biên độ trọng số giữa các channel chênh lệch rất lớn.
-- Bằng cách tính Scale riêng cho từng channel ($W_{\text{int8}}[c]$), các channel có trọng số nhỏ không còn bị làm tròn về $0$ như phương pháp Per-Tensor trước đây, giúp bảo toàn $100\%$ các kênh đặc trưng đường nét của ảnh X-quang.
-
-### 3.2. Triệt tiêu hiện tượng Bão hòa Tanh nhờ Selective Quantization
-- Bảo vệ các lớp `Initial`, `Upsampler` và `Final Conv` ở độ chính xác số thực (FP32) giúp dải giá trị trước hàm $\tanh$ không bị méo vọt Scale.
-- Phép cộng đường nối tắt trong 16 khối Residual Blocks được nén INT8 mượt mà mà không làm tích tụ sai số vọt dải sang các khối nâng độ phân giải phía sau.
+### Nguyên nhân gây ra sự sụt giảm ở Q7 cố định:
+1.  **Hệ số nhân cố định (Scale = 128.0) cho toàn bộ mô hình:**
+    Khác với thuật toán tối ưu động tự động tính toán scale tối ưu cho từng channel, Q7 nhân cố định toàn bộ trọng số với $128.0$.
+    *   Các trọng số quá nhỏ (ví dụ nằm trong khoảng $[-0.003, 0.003]$) sau khi nhân với 128 chỉ đạt giá trị khoảng $[-0.38, 0.38]$, khi làm tròn số nguyên (`round`) sẽ **bị triệt tiêu hoàn toàn về 0**. Điều này làm biến mất nhiều đặc trưng chi tiết nhỏ của ảnh.
+    *   Các trọng số lớn ngoài khoảng $[-1.0, 1.0]$ bị kẹp cứng (`clamp`) ở $[-128, 127]$, làm méo phân phối trọng số gốc.
+2.  **Độ nhạy cảm của ảnh y tế:**
+    Với ảnh X-quang phổi, mức PSNR **28.58 dB** và SSIM **0.87** có nghĩa là cấu trúc thô vẫn được giữ lại nhưng **các chi tiết mô nhỏ, cạnh xương và tổn thương li ti đã bị mờ đi rõ rệt**.
 
 ---
 
-## 4. Kết luận cho Triển khai FPGA Zynq
+## 4. Giải pháp cải thiện cho quy trình phần cứng FPGA
 
-1. **Mô hình INT8 Tối ưu đã hoàn toàn sẵn sàng cho phần cứng:** Giảm dung lượng 3.6 lần, giữ nguyên $100\%$ chất lượng ảnh y tế.
-2. **Sẵn sàng trích xuất trọng số:** Trọng số `weight_int8` dạng `int8` $[-127, 127]$ và `weight_scale` đã sẵn sàng để trích xuất ra các file dữ liệu TXT/Binary phục vụ nạp vào mạch tăng tốc FPGA Zynq PL qua AXI DMA.
+Nếu mạch phần cứng FPGA bắt buộc phải sử dụng định dạng Q7 cố định (để thiết kế mạch ALU đơn giản, không cần bộ chia/nhân động):
+1.  **Áp dụng QAT (Quantization-Aware Training):** Thực hiện huấn luyện tinh chỉnh (Fine-tune) mô hình trực tiếp với hàm giả lập Q7 trong quá trình train để mô hình thích nghi trước với hệ số nhân 128.
+2.  **Sử dụng Qx.y động giữa các Layer:** Nếu Vivado hỗ trợ, thay vì dùng Q7 (7 bit thập phân) cho tất cả các layer, ta có thể dùng Q5.3 cho layer có trọng số lớn hoặc Q9 cho các layer có trọng số nhỏ để tránh mất mát thông tin.
