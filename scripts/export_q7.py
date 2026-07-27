@@ -27,22 +27,45 @@ def export_q7_weights(weights_path, output_filename="srgan_q7_weights.txt", upsc
     if not os.path.exists(weights_path):
         raise FileNotFoundError(f"Checkpoint not found: {weights_path}")
 
-    print(f"[INFO] Loading FP32 model from: {weights_path}")
-    base_model = Generator(upscale_factor=upscale_factor).to(device)
+    print(f"[INFO] Loading model from: {weights_path}")
     checkpoint = torch.load(weights_path, map_location=device)
     
-    if isinstance(checkpoint, dict) and "model" in checkpoint:
-        base_model.load_state_dict(checkpoint["model"])
-    else:
-        base_model.load_state_dict(checkpoint)
-    base_model.eval()
+    is_qat = False
+    state_dict = checkpoint
+    if isinstance(checkpoint, dict):
+        if checkpoint.get("qat") is True:
+            is_qat = True
+            state_dict = checkpoint["model"]
+        elif "model" in checkpoint:
+            state_dict = checkpoint["model"]
 
-    # 1. Perform BatchNorm Fusion if requested (vital for hardware compatibility)
-    if fuse_bn:
-        print("[INFO] Fusing Conv2d + BatchNorm2d layers before quantization...")
-        model_to_export = fuse_generator_bn(base_model)
+    # Check if the state dict matches QAT layout (fused BN, with pointwise bias)
+    if any("pointwise.bias" in k for k in state_dict.keys()) and not any("bn.weight" in k for k in state_dict.keys()):
+        is_qat = True
+
+    base_model = Generator(upscale_factor=upscale_factor).to(device)
+
+    if is_qat:
+        print("[INFO] Detected QAT/Fused checkpoint structure. Restructuring model...")
+        fused_model = fuse_generator_bn(base_model)
+        # Import the helper to replace Conv2d with Q7QATConv2d
+        from train_qat import replace_conv_with_qat
+        for res_block in fused_model.residual:
+            replace_conv_with_qat(res_block)
+        replace_conv_with_qat(fused_model.convblock)
+        
+        fused_model.load_state_dict(state_dict)
+        model_to_export = fused_model
     else:
-        model_to_export = base_model
+        print("[INFO] Detected standard FP32 checkpoint structure.")
+        base_model.load_state_dict(state_dict)
+        base_model.eval()
+        if fuse_bn:
+            print("[INFO] Fusing Conv2d + BatchNorm2d layers before quantization...")
+            model_to_export = fuse_generator_bn(base_model)
+        else:
+            model_to_export = base_model
+
 
     print(f"[INFO] Exporting all parameters to Q7 format in: {output_filename}...")
     
