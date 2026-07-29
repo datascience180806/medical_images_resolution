@@ -97,7 +97,7 @@ def stitch_tiles_into_image(tiles: list, grid_dim: tuple, orig_shape: tuple, sca
     return full_img_cropped
 
 
-def transfer_dma_pynq(tiles: list, bitstream_path: str = "srcnn_accel.bit", scale_factor: int = 2):
+def transfer_dma_pynq(tiles: list, bitstream_path: str = "srcnn_accel.bit", weights_path: str = "srgan_q7_weights_qat.txt", scale_factor: int = 2):
     """
     Transfers tile numpy arrays to Zynq PL Accelerator via AXI DMA using PYNQ framework.
     """
@@ -107,6 +107,24 @@ def transfer_dma_pynq(tiles: list, bitstream_path: str = "srcnn_accel.bit", scal
     print(f"[INFO PYNQ] Loading FPGA Bitstream: {bitstream_path}...")
     overlay = Overlay(bitstream_path)
     dma = overlay.axi_dma_0  # Tên kênh DMA cấu hình trên Zynq PL
+
+    # Nạp trọng số xuống FPGA qua DMA nếu đường dẫn được cung cấp
+    if weights_path:
+        if not os.path.exists(weights_path):
+            raise FileNotFoundError(f"Không tìm thấy file trọng số: {weights_path}")
+        print(f"[INFO PYNQ] Đang đọc file trọng số Q7 từ {weights_path}...")
+        # Đọc file txt, ép kiểu về số nguyên 8-bit có dấu (Int8)
+        weights_data = np.loadtxt(weights_path, dtype=np.int8)
+        # Cấp phát bộ nhớ đệm PYNQ cho trọng số
+        weight_buffer = allocate(shape=weights_data.shape, dtype=np.int8)
+        weight_buffer[:] = weights_data
+        print(f"[INFO PYNQ] Bắt đầu xả {len(weights_data)} hệ số weights qua AXI-Stream...")
+        start_w_time = time.time()
+        # Kích hoạt DMA đẩy nguyên một cục weights xuống mạch
+        dma.sendchannel.transfer(weight_buffer)
+        dma.sendchannel.wait()  # Chờ đẩy xong  
+        print(f"[INFO PYNQ] Nạp trọng số thành công! Mất {time.time() - start_w_time:.4f} giây.")
+        weight_buffer.freebuffer()
 
     tile_size = 64
     out_size = tile_size * scale_factor  # 128
@@ -118,7 +136,6 @@ def transfer_dma_pynq(tiles: list, bitstream_path: str = "srcnn_accel.bit", scal
     processed_tiles = []
     print(f"[INFO PYNQ] Streaming {len(tiles)} tiles over AXI DMA...")
     start_time = time.time()
-
     for idx, tile in enumerate(tiles):
         # Đổ mảng Numpy vào buffer đầu vào của DMA
         in_buffer[:] = tile.flatten()
@@ -177,6 +194,7 @@ def main():
     parser.add_argument('--scale_factor', type=int, default=2, help='Upscale factor (fixed at 2)')
     parser.add_argument('--output_path', type=str, default='./assets/output_zynq_sr.png', help='Output stitched image path')
     parser.add_argument('--bitstream', type=str, default='srcnn_accel.bit', help='Path to Vivado FPGA bitstream file')
+    parser.add_argument('--weights_path', type=str, default='srgan_q7_weights_qat.txt', help='Path to Q7 weights file')
     parser.add_argument('--export_txt_dir', type=str, default='./dma_txt_buffers', help='Directory to export TXT tile buffers')
     parser.add_argument('--sim', action='store_true', help='Force Simulation Mode (no PYNQ required)')
 
@@ -200,7 +218,12 @@ def main():
     # 3. Transfer tiles over AXI DMA (PYNQ Hardware or Simulation Mode)
     if PYNQ_AVAILABLE and not args.sim:
         print("[HOST] Running on Zynq PS ARM board (PYNQ Mode)...")
-        processed_tiles = transfer_dma_pynq(tiles, bitstream_path=args.bitstream, scale_factor=args.scale_factor)
+        processed_tiles = transfer_dma_pynq(
+            tiles, 
+            bitstream_path=args.bitstream, 
+            weights_path=args.weights_path, 
+            scale_factor=args.scale_factor
+        )
     else:
         print("[HOST] Running in Simulation/Kaggle Mode...")
         processed_tiles = simulate_dma_transfer(tiles, export_txt_dir=args.export_txt_dir, scale_factor=args.scale_factor)
