@@ -8,16 +8,16 @@ Tài liệu này cung cấp thống kê chi tiết về **3 bộ dữ liệu X-q
 
 | Tên Bộ Dữ Liệu | Số Lượng Ảnh | Tổng Dung Lượng | Định Dạng Ảnh | Độ Phân Giải Gốc | Đặc Điểm Lâm Sàng |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **NIH ChestX-ray14** | 22.120 ảnh (Test set) | ~8.0 GB | PNG (Grayscale) | $1024 \times 1024$ | 14 loại bệnh lý lồng ngực phổ biến ở người lớn |
-| **COVID-19 Radiography** | 21.165 ảnh | ~740 MB | PNG (Grayscale) | $299 \times 299$ | Phổi bình thường, nhiễm Covid-19, Viêm phổi virus |
-| **Guangzhou Pediatric Pneumonia** | 5.856 ảnh | ~1.15 GB | JPEG (Grayscale/RGB) | Dao động từ $1000 \times 800$ đến $2000 \times 1500$ | Phổi bình thường và viêm phổi ở trẻ em (1-5 tuổi) |
+| **NIH ChestX-ray14** | 22.385 ảnh | 8,38 GB | PNG (Grayscale) | $1024 \times 1024$ | 14 loại bệnh lý lồng ngực phổ biến ở người lớn |
+| **COVID-19 Radiography** | 9.628 ảnh | 325,57 MB | PNG (Grayscale) | $299 \times 299$ | Phổi bình thường, nhiễm Covid-19, Viêm phổi virus |
+| **Guangzhou Pediatric Pneumonia** | 5.856 ảnh | 1,15 GB | JPEG (Grayscale/RGB) | Dao động từ $1000 \times 800$ đến $2000 \times 1500$ | Phổi bình thường và viêm phổi ở trẻ em (1-5 tuổi) |
 
 ---
 
 ## 2. Chi Tiết Từng Bộ Dữ Liệu & Tài Liệu Trích Dẫn (Citation)
 
 ### 2.1. NIH ChestX-ray14 (National Institutes of Health)
-*   **Tổng quan:** Bộ dữ liệu y tế quy mô lớn được thu thập từ Trung tâm Y tế Lâm sàng NIH (Mỹ). Chỉ sử dụng phần kiểm thử độc lập (22.120 ảnh) chưa từng xuất hiện trong tập huấn luyện (90.000 ảnh) để đảm bảo không bị rò rỉ dữ liệu (no data leakage).
+*   **Tổng quan:** Bộ dữ liệu y tế quy mô lớn được thu thập từ Trung tâm Y tế Lâm sàng NIH (Mỹ). Sử dụng phần kiểm thử độc lập gồm 22.385 ảnh chưa từng xuất hiện trong tập huấn luyện (90.000 ảnh) để đảm bảo không bị rò rỉ dữ liệu (no data leakage).
 *   **Đặc điểm hình ảnh:** Ảnh chụp X-quang ngực thẳng người lớn, có độ tương phản chuẩn y khoa cao, thang màu xám chuẩn nét giúp đánh giá tối ưu chất lượng tái tạo mô xương và mô phế quản phổi.
 *   **Tài liệu trích dẫn khoa học (IEEE Reference Format):**
     ```text
