@@ -65,3 +65,32 @@ Nhóm chỉ số này tập trung đánh giá hiệu quả thiết kế mạch s
 | **Full Frame Latency** | Tổng thời gian trễ đầu-cuối để khôi phục và ghép nối hoàn chỉnh một bức ảnh y tế kích thước lớn ($1024 \times 1024$). | **Càng thấp càng tốt.** Đối với ứng dụng thời gian thực lâm sàng, độ trễ này nên nằm trong khoảng **< 500 ms**. |
 | **Frame Processing Rate (FPS)** | Số lượng khung hình độ phân giải cao ($1024 \times 1024$) hệ thống có thể dựng lại thành công trong một giây. | **Càng cao càng tốt.** Thể hiện tốc độ xử lý thời gian thực của toàn bộ hệ thống (Host + FPGA). |
 | **Energy Efficiency (FPS/W)** | Hiệu suất năng lượng tính bằng số khung hình xử lý được trên mỗi Watt điện năng tiêu thụ (Dynamic Power). | **Càng cao càng tốt.** Chứng minh tính ưu việt về hiệu năng/năng lượng của FPGA so với các dòng CPU/GPU tiêu tốn nhiều điện. |
+
+---
+
+## NHÓM 3: ĐÁNH GIÁ OFFLINE & SO SÁNH HỌC THUẬT (OFFLINE MODEL COMPARISON METRICS)
+
+Đây là các chỉ số đánh giá chất lượng ảnh chạy bằng phần mềm (chạy offline trên Python sau khi thu nhận kết quả từ phần cứng). Nhóm chỉ số này được bổ sung nhằm mục đích so sánh công bằng về mặt chất lượng hình ảnh với các bài báo khoa học nghiên cứu thuật toán SR y tế khác (mặc dù các nghiên cứu đó không triển khai lên phần cứng FPGA).
+
+### 3.1. Chỉ Số Đánh Giá Có Ảnh Tham Chiếu (Full-Reference Offline Metrics)
+
+| Tên Chỉ Số (Metric) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
+| :--- | :--- | :--- |
+| **MSE / RMSE** | Sai số bình phương trung bình (hoặc căn bậc hai) đo chênh lệch giá trị điểm ảnh thô giữa ảnh SR và HR. | **Càng nhỏ càng tốt.** (Tiệm cận về 0, đo lường sự tương quan chặt chẽ ở mức pixel). |
+| **MS-SSIM** *(Multi-scale SSIM)* | Phiên bản SSIM mở rộng, đánh giá chi tiết cấu trúc ảnh trên nhiều độ phân giải (thang đo) khác nhau để phản ánh chi tiết chân thực hơn. | Dải từ 0 đến 1. **Càng gần 1 càng tốt** (SSIM đa quy mô lý tưởng **> 0.96**). |
+| **LPIPS** *(Learned Perceptual Similarity)* | Đo lường khoảng cách cảm nhận thị giác của con người sử dụng đặc trưng trích xuất từ mạng nơ-ron sâu (VGG/AlexNet). | **Càng nhỏ càng tốt.** (Dưới **0.15** là cực tốt). Rất quan trọng cho các mô hình GAN/Swift-SRGAN để chứng minh ảnh sắc nét tự nhiên thay vì bị mờ. |
+| **IFC** *(Information Fidelity Criterion)* | Đánh giá lượng thông tin trung thực được truyền tải từ ảnh gốc đến ảnh khôi phục dựa trên lý thuyết thông tin. | **Càng cao càng tốt.** |
+
+### 3.2. Chỉ Số Đánh Giá Không Cần Ảnh Tham Chiếu (No-Reference Offline Metrics)
+
+| Tên Chỉ Số (Metric) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
+| :--- | :--- | :--- |
+| **NIQE** *(Naturalness Image Quality)* | Đánh giá độ tự nhiên và sự xuất hiện của các nhiễu nhân tạo/đường răng cưa trên ảnh SR mà không cần so sánh với ảnh HR gốc. | **Càng nhỏ càng tốt.** (Chỉ số NIQE lý tưởng **< 4.0** cho ảnh y tế tự nhiên). Rất tốt khi kiểm thử trên dữ liệu lâm sàng thực tế không có ảnh gốc. |
+| **Mean & STD** | Đo độ sáng trung bình (Mean) và độ lệch chuẩn tương phản (STD) của giá trị pixel trên ảnh kết quả SR. | **STD càng cao** biểu thị ảnh có độ tương phản và độ sắc nét cao (tuy nhiên cần so sánh biên độ với ảnh gốc để tránh tăng tương phản giả tạo). |
+
+### 3.3. Đánh Giá Chủ Quan (Subjective Metrics)
+
+| Tên Chỉ Số (Metric) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
+| :--- | :--- | :--- |
+| **MOS** *(Mean Opinion Score)* | Điểm đánh giá chất lượng thị giác lâm sàng được chấm bởi hội đồng chuyên gia y tế (bác sĩ X-quang). | Thang điểm từ 1 (kém) đến 5 (xuất sắc). Điểm **MOS >= 4.0** chứng minh ảnh siêu độ phân giải đáp ứng tốt nhu cầu chẩn đoán bệnh lâm sàng thực tế. |
+
