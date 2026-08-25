@@ -17,6 +17,7 @@ Tài liệu này cung cấp thống kê chi tiết về **3 bộ dữ liệu X-q
 ## 2. Chi Tiết Từng Bộ Dữ Liệu & Tài Liệu Trích Dẫn (Citation)
 
 ### 2.1. NIH ChestX-ray14 (National Institutes of Health)
+*   **Đường dẫn gốc:** [Kaggle - NIH Chest X-rays](https://www.kaggle.com/datasets/nih-chest-xrays/data) | [Official Box Folder](https://nihcc.app.box.com/v/ChestXray-NIHCC)
 *   **Tổng quan:** Bộ dữ liệu y tế quy mô lớn được thu thập từ Trung tâm Y tế Lâm sàng NIH (Mỹ). Sử dụng phần kiểm thử độc lập gồm 22.385 ảnh chưa từng xuất hiện trong tập huấn luyện (90.000 ảnh) để đảm bảo không bị rò rỉ dữ liệu (no data leakage).
 *   **Đặc điểm hình ảnh:** Ảnh chụp X-quang ngực thẳng người lớn, có độ tương phản chuẩn y khoa cao, thang màu xám chuẩn nét giúp đánh giá tối ưu chất lượng tái tạo mô xương và mô phế quản phổi.
 *   **Tài liệu trích dẫn khoa học (IEEE Reference Format):**
@@ -37,6 +38,7 @@ Tài liệu này cung cấp thống kê chi tiết về **3 bộ dữ liệu X-q
 ---
 
 ### 2.2. COVID-19 Radiography Database (Qatar University & University of Dhaka)
+*   **Đường dẫn gốc:** [Kaggle - COVID-19 Radiography Database](https://www.kaggle.com/datasets/tawsifurrahman/covid19-radiography-database)
 *   **Tổng quan:** Bộ dữ liệu đoạt giải thưởng của nhóm nghiên cứu Qatar và Bangladesh. Được tạo ra nhằm mục đích phát hiện nhanh các tổn thương do COVID-19 và các loại viêm phổi khác thông qua ảnh X-quang.
 *   **Đặc điểm hình ảnh:** Các ảnh đã được tiền xử lý chuẩn hóa kích thước về $299 \times 299$ pixel, định dạng PNG, ảnh sắc nét giúp kiểm chứng hiệu năng xử lý của mô hình trên các ảnh có độ phân giải trung bình.
 *   **Tài liệu trích dẫn khoa học (IEEE Reference Format):**
@@ -59,6 +61,7 @@ Tài liệu này cung cấp thống kê chi tiết về **3 bộ dữ liệu X-q
 ---
 
 ### 2.3. Guangzhou Pediatric Pneumonia Dataset (Guangzhou Women and Children's Medical Center)
+*   **Đường dẫn gốc:** [Kaggle - Chest X-Ray Images (Pneumonia)](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia)
 *   **Tổng quan:** Bộ dữ liệu X-quang phổi nhi khoa của Bệnh viện Phụ sản và Nhi đồng Quảng Châu. Được kiểm duyệt lâm sàng bởi các bác sĩ chẩn đoán hình ảnh giàu kinh nghiệm.
 *   **Đặc điểm hình ảnh:** Độ phân giải ảnh không đồng đều (nhiều ảnh kích thước rất lớn), chứa một số vùng nhiễu thực tế lâm sàng. Cực kỳ hữu dụng để đánh giá độ bền (Robustness) của thuật toán chia mảnh (Tiling) và ghép nối (Stitching) của file Host khi xử lý ảnh kích thước biến động lớn.
 *   **Tài liệu trích dẫn khoa học (IEEE Reference Format):**
