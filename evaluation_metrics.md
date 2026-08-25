@@ -85,11 +85,17 @@ Nhóm chỉ số này tập trung đánh giá hiệu quả thiết kế mạch s
 | **Junction Temperature** | Nhiệt độ tại lớp tiếp giáp bán dẫn bên trong lòng con chip khi hoạt động liên tục ở tần số cao. | **Càng thấp càng tốt.** Phải nằm dưới ngưỡng nhiệt độ giới hạn của chip (thường **< 85°C** đối với chip thương mại). |
 | **Thermal Margin** | Biên độ an toàn nhiệt độ còn lại của con chip trước khi bị quá nhiệt dẫn đến hỏng hóc hoặc ngắt mạch. | **Càng cao càng tốt**, đảm bảo bo mạch hoạt động bền bỉ trong thời gian dài. |
 
-### 2.4. Tốc Độ Xử Lý & Hiệu Năng Năng Lượng (Throughput & Energy Efficiency)
+### 2.4. Tốc Độ Xử Lý & Hiệu Năng Tính Toán (Throughput & Hardware Efficiency)
 
 | Tên Chỉ Số (Metric) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
 | :--- | :--- | :--- |
 | **Single Patch Latency** | Thời gian trễ để xử lý hoàn chỉnh 1 mảnh ảnh (bao gồm truyền DMA xuống PL + chạy qua pipeline tích chập). | **Càng thấp càng tốt.** (Thời gian xử lý từng mảnh tính bằng mili-giây, ví dụ **< 5 ms**). |
 | **Full Frame Latency** | Tổng thời gian trễ đầu-cuối để khôi phục và ghép nối hoàn chỉnh một bức ảnh y tế kích thước lớn ($1024 \times 1024$). | **Càng thấp càng tốt.** Đối với ứng dụng thời gian thực lâm sàng, độ trễ này nên nằm trong khoảng **< 500 ms**. |
 | **Frame Processing Rate (FPS)** | Số lượng khung hình độ phân giải cao ($1024 \times 1024$) hệ thống có thể dựng lại thành công trong một giây. | **Càng cao càng tốt.** Thể hiện tốc độ xử lý thời gian thực của toàn bộ hệ thống (Host + FPGA). |
-| **Energy Efficiency (FPS/W)** | Hiệu suất năng lượng tính bằng số khung hình xử lý được trên mỗi Watt điện năng tiêu thụ (Dynamic Power). | **Càng cao càng tốt.** Chứng minh tính ưu việt về hiệu năng/năng lượng của FPGA so với các dòng CPU/GPU tiêu tốn nhiều điện. |
+| **GOPS** *(Giga-Operations Per Second)* | Băng thông tính toán thô của mạch, đo tổng số tỷ phép toán (chủ yếu là cộng/nhân tích lũy MAC) mạch thực hiện được trong 1 giây. | **Càng cao càng tốt.** Chứng minh sức mạnh tính toán song song thực tế của phần cứng. |
+| **GOPS / W** | Hiệu năng tính toán trên mỗi đơn vị điện năng tiêu thụ (Dynamic Power), thước đo chuẩn để so sánh hiệu quả năng lượng giữa các bài báo FPGA. | **Càng cao càng tốt.** Đây là thế mạnh cạnh tranh cốt lõi của FPGA so với CPU và GPU. |
+| **GOPS / DSP** | Hiệu quả sử dụng tài nguyên toán học chuyên dụng, đo lường năng lực tính toán gánh trên mỗi khối DSP phần cứng. | **Càng cao càng tốt.** Thể hiện khả năng tối ưu hóa sơ đồ kiến trúc mạch để đạt hiệu suất cao với ít tài nguyên nhất. |
+| **GOPS / kLUT** | Năng lực tính toán phân bổ trên mỗi 1.000 bảng tra cứu logic (LUT). | **Càng cao càng tốt.** |
+| **DDR/DRAM Bandwidth** | Băng thông truy cập bộ nhớ ngoài (đọc/ghi RAM thông qua bus AXI DMA) đo bằng MB/s. | **Càng thấp càng tốt** (hoặc nằm trong giới hạn băng thông bus). Tối thiểu hóa việc truy cập bộ nhớ ngoài giúp tránh hiện tượng nghẽn cổ chai bộ nhớ (memory bottleneck). |
+| **Energy Efficiency (FPS/W)** | Hiệu suất năng lượng tính bằng số khung hình xử lý được trên mỗi Watt điện năng tiêu thụ (Dynamic Power). | **Càng cao càng tốt.** |
+
