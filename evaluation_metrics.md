@@ -1,56 +1,67 @@
-# Báo Cáo Đánh Giá Hiệu Năng Hệ Thống (System Evaluation Metrics Report)
+# Danh Mục Các Chỉ Số Đánh Giá Hệ Thống (System Evaluation Metrics)
 
-Báo cáo này phân loại và phân tích chi tiết các chỉ số thu thập được từ quá trình chạy thực tế bo mạch **PYNQ-Z2 (FPGA Xilinx Zynq-7000 XC7Z020)**. Các chỉ số được chia làm **2 nhóm chính**: Đánh giá Chất lượng Mô hình (Model Performance) và Đánh giá Phần cứng (Hardware Performance).
+Tài liệu này định nghĩa danh mục các chỉ số cần đo lường và đánh giá khi triển khai thực nghiệm mô hình Siêu độ phân giải ảnh y tế (Swift-SRGAN/SRCNN) lên nền tảng phần cứng tăng tốc FPGA (PYNQ-Z2). Các chỉ số được phân loại thành **2 nhóm chính**: Đánh giá Mô hình (Model Performance) và Đánh giá Phần cứng (Hardware Performance).
 
 ---
 
 ## NHÓM 1: ĐÁNH GIÁ HIỆU QUẢ MÔ HÌNH (MODEL PERFORMANCE & IMAGE QUALITY)
 
-Nhóm chỉ số này đánh giá khả năng khôi phục ảnh y tế từ độ phân giải thấp (LR) lên độ phân giải cao (SR) về mặt toán học và độ chính xác lâm sàng, đảm bảo giữ nguyên cấu trúc giải phẫu học của ảnh X-quang.
+Nhóm chỉ số này tập trung đánh giá chất lượng phục hồi hình ảnh X-quang (độ sắc nét, độ tương đồng cấu trúc giải phẫu) và tính toàn vẹn số học khi chuyển đổi mô hình từ dấu phẩy động (Float32) trên phần mềm sang số nguyên cố định (Fixed-Point Q7) trên phần cứng.
 
-### 1.1. Các Chỉ Số Chất Lượng Khôi Phục Ảnh (Image Restoration Metrics)
-*   **Peak Signal-to-Noise Ratio (PSNR = 43.81 dB):**
-    *   *Ý nghĩa:* Đo lường tỷ lệ giữa tín hiệu hữu ích cực đại và nhiễu nền được tạo ra do quá trình nội suy/lượng tử hóa. Chỉ số **43.81 dB** là cực kỳ cao đối với ảnh y tế (ngưỡng chấp nhận được thông thường là > 30 dB), chứng minh ảnh khôi phục hầu như không có nhiễu nhân tạo.
-*   **Structural Similarity Index (SSIM = 0.9880):**
-    *   *Ý nghĩa:* Đánh giá độ tương đồng về mặt cấu trúc giải phẫu (độ sáng, độ tương phản và biên dạng cấu trúc xương/phổi) giữa ảnh gốc chất lượng cao và ảnh khôi phục. Chỉ số **0.9880** (gần sát mức tuyệt đối 1.0) khẳng định không có sự biến dạng cấu trúc mô học.
-*   **Edge Preservation Index (EPI = 0.8119):**
-    *   *Ý nghĩa:* Đo lường mức độ bảo toàn các đường biên sắc nét (edges) sử dụng tương quan gradient Laplacian. Trong ảnh X-quang, biên xương và ranh giới mô mềm là tối quan trọng để bác sĩ chẩn đoán; EPI đạt **0.8119** chứng minh biên ảnh không bị mờ nhòe.
-*   **Contrast-to-Noise Ratio (CNR = 0.4600):**
-    *   *Ý nghĩa:* Đo tương phản giữa vùng mô xương quan tâm (Bone ROI) và nhiễu nền xung quanh. Đảm bảo mô hình nâng cao độ nét nhưng vẫn giữ được độ tương phản tự nhiên của phim X-quang.
+### 1.1. Chất Lượng Phục Hồi Ảnh Y Tế (Medical Image Restoration Metrics)
 
-### 1.2. Độ Chính Xác Số Học (Arithmetic & Data Integrity)
-*   **Tỷ lệ khớp bit tuyệt đối (Exact Bit Match Rate = 58.24%):**
-    *   *Ý nghĩa:* Tỷ lệ phần trăm các điểm ảnh có giá trị số nguyên khớp hoàn toàn 100% giữa mô phỏng phần mềm (Float32) và tính toán phần cứng số nguyên cố định (RTL Q7).
-*   **Sai số tuyệt đối trung bình (MAE = 0.9265 LSB):**
-    *   *Ý nghĩa:* Sai số trung bình trên mỗi pixel chỉ là **0.9265 LSB** (nhỏ hơn sai số lượng tử hóa giới hạn 1 LSB). Điều này chứng minh thuật toán ép kiểu Q7 của chúng ta kiểm soát cực tốt sai số lan truyền, đảm bảo độ trung thực dữ liệu.
-*   **Sai lệch cực đại (Maximum Deviation = 21 LSB):**
-    *   *Ý nghĩa:* Chỉ xuất hiện cục bộ tại các đường biên có tần số cực cao (sự chuyển đổi đột ngột giữa đen và trắng), không ảnh hưởng đến độ mịn tổng thể của ảnh.
+| Tên Chỉ Số (Metric) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
+| :--- | :--- | :--- |
+| **PSNR** *(Peak Signal-to-Noise Ratio)* | Đo tỷ lệ giữa công suất tín hiệu cực đại (ảnh chất lượng cao) và công suất nhiễu lỗi khôi phục. | **Càng cao càng tốt.** Đối với ảnh y tế, chỉ số **PSNR > 30 dB** là đạt chuẩn, và **> 35 - 40 dB** là lý tưởng (nhiễu không thể nhận biết bằng mắt thường). |
+| **SSIM** *(Structural Similarity Index)* | Đánh giá độ tương đồng về cấu trúc giải phẫu hình ảnh dựa trên 3 thành phần: độ tương phản, độ sáng và cấu trúc hình học. | Dải giá trị từ 0 đến 1. **Càng gần 1 càng tốt.** Trong y khoa, bắt buộc **SSIM > 0.95** (lý tưởng là **> 0.98**) để đảm bảo không biến dạng mô học. |
+| **EPI** *(Edge Preservation Index)* | Đo khả năng bảo toàn các đường biên, ranh giới sắc nét của các cơ quan giải phẫu (như xương, phổi) sau khi phóng to. | Dải giá trị từ 0 đến 1. **Càng gần 1 càng tốt.** Chỉ số **> 0.75** thể hiện biên cạnh sắc nét, không bị mờ nhòe vùng biên. |
+| **CNR** *(Contrast-to-Noise Ratio)* | Đo tỷ số tương phản trên nhiễu giữa vùng mô quan tâm (Region of Interest - ROI) và vùng nền xung quanh. | **Càng cao càng tốt.** Đảm bảo ảnh tăng độ nét nhưng vẫn giữ được độ tương phản tự nhiên của ảnh chụp bức xạ thực tế. |
+
+### 1.2. Độ Chính Xác Số Học & Lượng Tử Hóa (Arithmetic & Quantization Integrity)
+
+| Tên Chỉ Số (Metric) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
+| :--- | :--- | :--- |
+| **Exact Bit Match Rate** | Tỷ lệ phần trăm các điểm ảnh có giá trị số nguyên khớp hoàn toàn 100% giữa kết quả chạy Python (Float32 mô phỏng) và Hardware RTL (Q7). | **Càng cao càng tốt.** Do sai số làm tròn khi lượng tử hóa Q7, tỷ lệ này thường dao động trong khoảng **> 50% - 90%** là đạt chuẩn. |
+| **MAE** *(Mean Absolute Error)* | Sai số tuyệt đối trung bình trên từng điểm ảnh giữa kết quả mô phỏng phần mềm và tính toán phần cứng (tính theo đơn vị LSB). | **Càng nhỏ càng tốt.** Bắt buộc chỉ số **MAE < 1.0 LSB** để đảm bảo sai số lượng tử hóa bị giới hạn trong phạm vi cho phép. |
+| **Max Delta** *(Maximum Deviation)* | Khoảng sai lệch điểm ảnh lớn nhất xuất hiện giữa tính toán phần mềm và phần cứng. | **Càng nhỏ càng tốt.** Chỉ số này thường xuất hiện cục bộ tại các vùng biên có tần số thay đổi cực mạnh (độ dốc biên lớn), thông thường **< 25 LSB** là chấp nhận được. |
+| **Overflow / Underflow Check** | Kiểm tra lỗi tràn số vật lý khi mạch thực hiện phép cộng/nhân tích lũy ở các lớp tích chập sâu. | **Bắt buộc đạt trạng thái PASSED (0 lỗi tràn).** Mạch phải có logic bão hòa (Saturation/Clipping logic) để kẹp giá trị nếu vượt dải $[-128, 127]$. |
 
 ---
 
-## NHÓM 2: ĐÁNH GIÁ PHẦN CỨNG (HARDWARE IMPLEMENTATION METRICS)
+## NHÓM 2: ĐÁNH GIÁ PHẦN CỨNG (HARDWARE PERFORMANCE & EFFICIENCY)
 
-Nhóm chỉ số này đánh giá hiệu quả thiết kế vi mạch RTL trên tấm silicon FPGA về mặt tài nguyên, tốc độ xử lý, công suất tiêu thụ và băng thông truyền dữ liệu.
+Nhóm chỉ số này tập trung đánh giá hiệu quả thiết kế mạch số trên chip FPGA về mặt tối ưu hóa tài nguyên logic, tốc độ xử lý vật lý, độ trễ và điện năng tiêu thụ.
 
-### 2.1. Mức Độ Tiêu Thụ Tài Nguyên Phần Cứng (Logic Resource Utilization)
-Đo lường lượng tài nguyên logic trên chip FPGA XC7Z020 mà lõi SRCNN sử dụng:
-*   **Slice LUTs (15.81%):** Sử dụng 8.410 / 53.200 bộ bảng tra cứu logic. Mức sử dụng rất thấp, giúp mạch dễ dàng tích hợp thêm các tính năng khác.
-*   **Slice Registers (20.15%):** Sử dụng 21.444 / 106.400 Flip-Flop để lưu trữ trạng thái và thanh ghi dịch.
-*   **Block RAM (2.14%):** Chỉ tiêu tốn 3 BRAM 36K để làm bộ đệm dòng (Line Buffers) lưu trữ tạm thời dòng ảnh khi quét tích chập.
-*   **DSP48E1 Slices (5.45%):** Chỉ sử dụng 12 / 220 bộ xử lý tín hiệu số chuyên dụng (nhân-cộng phần cứng). Điều này cho thấy kiến trúc mạch nhân tích chập được tối ưu cực kỳ tốt, tiết kiệm bộ nhân DSP phần cứng chuyên dụng.
+### 2.1. Sử Dụng Tài Nguyên Phần Cứng (Logic Resource Utilization)
 
-### 2.2. Phân Tích Tần Số Hoạt Động & Xung Nhịp (Timing Analysis)
-*   **Tần số hoạt động thiết kế (Target Clock):** Thiết lập ở mức **100.0 MHz** (Chu kỳ 10 ns).
-*   **Độ lệch Setup Time (Worst Negative Slack - WNS = +2.823 ns):** Chỉ số dương (+2.823 ns) chứng minh mạch hoàn toàn không bị lỗi vi phạm thời gian đáp ứng (Zero Timing Violations).
-*   **Tần số hoạt động cực đại (Maximum Operating Frequency - F_max = 139.33 MHz):** Cho thấy mạch phần cứng có dư địa timing lên tới **28.23%**, sẵn sàng ép xung lên 130 MHz nếu muốn tăng tốc độ xử lý.
+| Loại Tài Nguyên (Resource) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
+| :--- | :--- | :--- |
+| **Slice LUTs** *(Look-Up Tables)* | Tài nguyên logic cơ bản trên chip dùng để cấu hình các hàm Boolean và phép toán logic. | **Càng thấp càng tốt.** Mức sử dụng tối ưu là **< 70%** tổng tài nguyên của chip để tránh tắc nghẽn định tuyến dây dẫn. |
+| **Slice Registers / FF** *(Flip-Flops)* | Các phần tử nhớ phần cứng dùng làm thanh ghi dịch, lưu trữ trạng thái và trễ xung nhịp trong đường ống (pipeline). | **Càng thấp càng tốt.** Tương tự LUT, nên duy trì mức **< 70%** để tối ưu hóa diện tích mạch silicon. |
+| **Block RAM (BRAM 36K)** | Các khối bộ nhớ RAM nội bộ chuyên dụng trên chip, dùng làm Line Buffers để đệm dữ liệu dòng quét tích chập. | **Càng thấp càng tốt.** Thường chiếm dụng **< 20%** tổng BRAM của chip để chừa tài nguyên cho các bộ nhớ đệm DMA khác. |
+| **DSP48E1 Slices** | Các khối xử lý tín hiệu số phần cứng chuyên dụng thực hiện nhân-cộng song song tốc độ cao. | **Càng thấp càng tốt.** Thể hiện mạch thiết kế thông minh, tái sử dụng được tài nguyên tính toán thay vì lạm dụng DSP phần cứng. |
+
+### 2.2. Phân Tích Timing & Xung Nhịp (Timing & Clock Frequency)
+
+| Tên Chỉ Số (Metric) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
+| :--- | :--- | :--- |
+| **Worst Negative Slack (WNS)** | Khoảng thời gian dự trữ đáp ứng mạch của đường truyền tín hiệu chậm nhất (độ lệch Setup Time). | **Bắt buộc WNS > 0 ns.** Chỉ số dương chứng minh mạch thiết kế hoàn chỉnh, không có vi phạm timing ở tần số xung nhịp đích. |
+| **Worst Hold Slack (WHS)** | Khoảng thời gian dự trữ tối thiểu để giữ ổn định dữ liệu tại thanh ghi (độ lệch Hold Time). | **Bắt buộc WHS > 0 ns.** Chứng minh tín hiệu không bị chạy đua (race condition) giữa các xung nhịp. |
+| **F_max** *(Max Frequency)* | Tần số hoạt động cực đại về mặt vật lý mà thiết kế mạch RTL có thể đáp ứng được trên chip FPGA. | **Càng cao càng tốt.** Cho biết độ ổn định và tiềm năng ép xung tăng tốc của lõi phần cứng (thường **> 120 MHz**). |
 
 ### 2.3. Công Suất Tiêu Thụ & Nhiệt Độ (Power & Thermal)
-*   **Tổng công suất tiêu thụ (Total On-Chip Power = 1.477 W):** Trong đó phần lớn là lõi cứng ARM PS7 chạy hệ điều hành (1.256 W).
-*   **Công suất động lõi FPGA (PL Fabric Dynamic Power = 85.0 mW):** Mức tiêu thụ điện cực kỳ nhỏ (chỉ 85 mW), chứng minh thiết kế vi mạch tích chập phân tách chiều sâu tối ưu hóa năng lượng xuất sắc so với GPU máy tính (thường tốn hàng chục đến hàng trăm Watt).
-*   **Nhiệt độ chip khi hoạt động (Junction Temperature = 42.0°C):** Chip chạy mát mẻ, biên độ an toàn nhiệt còn tới 43°C (Thermal Margin).
 
-### 2.4. Tốc Độ Xử Lý & Băng Thông Hệ Thống (System Throughput & FPS)
-*   **Độ trễ xử lý 1 mảnh (Single Patch Latency = 1.952 ms):** Thời gian truyền dữ liệu qua DMA cộng với thời gian tính toán tích chập trên FPGA cho 1 mảnh $128 \times 128$ pixel.
-*   **Độ trễ toàn khung ảnh (Full Frame Latency = 499.84 ms):** Tổng thời gian xử lý và tái tạo hoàn chỉnh 1 bức ảnh X-quang kích thước $1024 \times 1024$ (gồm 256 mảnh).
-*   **Tốc độ xử lý khung hình (Frame Rate = 2.00 FPS):** Tốc độ tái tạo ảnh thời gian thực.
-*   **Hiệu năng năng lượng (Energy Efficiency):** Đạt **23.53 FPS/W** (tính riêng trên công suất động lõi FPGA).
+| Tên Chỉ Số (Metric) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
+| :--- | :--- | :--- |
+| **PL Fabric Dynamic Power** | Điện năng tiêu thụ động sinh ra bởi quá trình chuyển mạch các cổng logic vật lý trên chip FPGA. | **Càng thấp càng tốt.** Cho biết độ tối ưu năng lượng của kiến trúc mạch (thường **< 200 mW** cho các thiết kế vi mạch di động). |
+| **Junction Temperature** | Nhiệt độ tại lớp tiếp giáp bán dẫn bên trong lòng con chip khi hoạt động liên tục ở tần số cao. | **Càng thấp càng tốt.** Phải nằm dưới ngưỡng nhiệt độ giới hạn của chip (thường **< 85°C** đối với chip thương mại). |
+| **Thermal Margin** | Biên độ an toàn nhiệt độ còn lại của con chip trước khi bị quá nhiệt dẫn đến hỏng hóc hoặc ngắt mạch. | **Càng cao càng tốt**, đảm bảo bo mạch hoạt động bền bỉ trong thời gian dài. |
+
+### 2.4. Tốc Độ Xử Lý & Hiệu Năng Năng Lượng (Throughput & Energy Efficiency)
+
+| Tên Chỉ Số (Metric) | Ý Nghĩa / Định Nghĩa | Tiêu Chuẩn Đánh Giá (Khoảng tốt) |
+| :--- | :--- | :--- |
+| **Single Patch Latency** | Thời gian trễ để xử lý hoàn chỉnh 1 mảnh ảnh (bao gồm truyền DMA xuống PL + chạy qua pipeline tích chập). | **Càng thấp càng tốt.** (Thời gian xử lý từng mảnh tính bằng mili-giây, ví dụ **< 5 ms**). |
+| **Full Frame Latency** | Tổng thời gian trễ đầu-cuối để khôi phục và ghép nối hoàn chỉnh một bức ảnh y tế kích thước lớn ($1024 \times 1024$). | **Càng thấp càng tốt.** Đối với ứng dụng thời gian thực lâm sàng, độ trễ này nên nằm trong khoảng **< 500 ms**. |
+| **Frame Processing Rate (FPS)** | Số lượng khung hình độ phân giải cao ($1024 \times 1024$) hệ thống có thể dựng lại thành công trong một giây. | **Càng cao càng tốt.** Thể hiện tốc độ xử lý thời gian thực của toàn bộ hệ thống (Host + FPGA). |
+| **Energy Efficiency (FPS/W)** | Hiệu suất năng lượng tính bằng số khung hình xử lý được trên mỗi Watt điện năng tiêu thụ (Dynamic Power). | **Càng cao càng tốt.** Chứng minh tính ưu việt về hiệu năng/năng lượng của FPGA so với các dòng CPU/GPU tiêu tốn nhiều điện. |
