@@ -5,3 +5,13 @@ __pycache__/
 .env
 .vscode/
 .idea/
+
+# Large dataset files and folders
+X-Ray images/
+X-Ray images.zip
+NIH_dataset/
+*.png
+*.jpg
+*.jpeg
+*.pdf
+!00000001_000.png

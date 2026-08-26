@@ -1,0 +1,52 @@
+TIÊU ĐỀ: HƯỚNG DẪN NHIỆM VỤ 1 - HUẤN LUYỆN & ÉP KIỂU TRỌNG SỐ (QUANTIZATION)
+
+Gửi ông (phụ trách Model & Weights),
+
+Để mô hình SRGAN có thể chạy mượt mà trên lõi cứng FPGA, mạch phần cứng của tui KHÔNG hỗ trợ số thực dấu phẩy động (Float32) nhằm tiết kiệm tài nguyên và đạt tốc độ xử lý cao nhất. 
+Do đó, toàn bộ trọng số (Weights) và sai số (Biases) của mạng sau khi train xong bắt buộc phải được ép về số nguyên 8-bit có dấu, chuẩn Q7.
+
+1. Yêu cầu về định dạng Q7 (Bắt buộc)
+- Định dạng: Q7 (Số nguyên 8-bit có dấu, gồm 1 bit dấu và 7 bit phần thập phân).
+- Dải giá trị phần cứng đọc được: Từ -128 đến 127.
+- Công thức ép kiểu: Giá_trị_Q7 = Cắt_Cụm( Làm_Tròn( Giá_trị_Float32 * 128 ) )
+- Lưu ý: Cần dùng hàm kẹp giá trị (Clamp/Clip) để tránh tràn số nếu trọng số Float32 vượt quá khoảng [-1.0, 1.0].
+
+2. Các bước thực hiện (Workflow)
+- Bước 1: Cứ train mô hình SRGAN bình thường với Float32.
+- Bước 2: Trích xuất weights/biases (chỉ lấy mạng Generator, bỏ qua Discriminator vì chạy thực tế không cần).
+- Bước 3: Duyệt qua từng layer, áp dụng công thức ép kiểu toàn bộ từ Float32 sang Q7.
+- Bước 4: Làm phẳng (flatten) các ma trận trọng số đa chiều thành mảng 1 chiều (1D).
+- Bước 5: Xuất ra file .txt (mỗi dòng 1 con số nguyên) hoặc file .bin.
+
+3. Code Python tham khảo (PyTorch) để ông ốp vào file train:
+
+import torch
+import numpy as np
+
+def quantize_to_q7(tensor):
+    # Nhân với 128 (2^7)
+    scaled_tensor = tensor * 128.0
+    # Làm tròn về số nguyên gần nhất
+    rounded_tensor = torch.round(scaled_tensor)
+    # Kẹp giá trị (Clamp) để chống tràn số 8-bit có dấu [-128, 127]
+    q7_tensor = torch.clamp(rounded_tensor, min=-128, max=127)
+    return q7_tensor.detach().cpu().numpy().astype(np.int8)
+
+def export_weights_for_fpga(model, output_filename="srgan_q7_weights.txt"):
+    with open(output_filename, 'w') as f:
+        for name, param in model.named_parameters():
+            if 'weight' in name or 'bias' in name:
+                # Ép kiểu về Q7 và làm phẳng (flatten)
+                q7_array = quantize_to_q7(param).flatten()
+                
+                # Ghi vào file .txt (Mỗi dòng 1 giá trị)
+                for val in q7_array:
+                    f.write(f"{val}\n")
+                    
+    print(f"Đã xuất weights chuẩn Q7 ra file: {output_filename}")
+
+# Chạy hàm xuất file sau khi train xong
+# export_weights_for_fpga(generator_model)
+
+OUTPUT MONG ĐỢI TỪ ÔNG: 
+1 file `srgan_q7_weights.txt` (hoặc .bin) chứa toàn bộ hệ số nguyên nằm trong khoảng [-128, 127]. Làm xong pass qua cho tui nhé!
