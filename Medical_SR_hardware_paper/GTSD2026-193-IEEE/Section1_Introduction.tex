@@ -1,0 +1,29 @@
+% IEEE conference version for GTSD 2026 proceedings
+\documentclass[conference]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{textcomp}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+\bstctlcite{IEEEexample:BSTcontrol}
+
+\title{Learning-Based Indoor Visible Light Positioning for Estimating 3D Objects}
+
+\author{\IEEEauthorblockN{Quoc-Phong Pham, Le The Dung}
+\IEEEauthorblockA{\textit{Faculty of Electrical and Electronics Engineering}\\
+\textit{Ho Chi Minh City University of Technology and Engineering}\\
+Ho Chi Minh City, Viet Nam\\
+2530713@student.hcmute.edu.vn, dunglt@hcmute.edu.vn}
+}
+\maketitle
+\section{Introduction}
+
+Super-resolution (SR) is a difficult approach \cite{nandal2024super}. A low-resolution (LR) image is reconstructed in high-resolution (HR) using SR techniques. Compared to LR images, HR images have more amplified information structures. Image SR, in technical terms, is a method of reconstructing the high-frequency components of LR images. SR techniques have been put out in recent years for both natural and medical images. Medical imaging serves as a vital tool for medical professionals to diagnose and treat patients. For quantitative analysis and accurate diagnosis, isotropic medical images in HR having detailed textural and structural information are required. Small anatomical structures and other minute information in medical imaging might reveal vital information that can be helpful for diagnosis. For instance, in brain MRI, the minute structural characteristics surrounding a tumor aid in the diagnosis of the tumor's origin and rate of growth \cite{tanno2017bayesian, connolly2003tumor}. Similar to this, accurately identifying tiny arteries in retinal images aids in the diagnosis of inflammation of nerves, a sign of hypertensive retinopathy. Obtaining such images in clinical practice is difficult as several factors affect the quality of medical images, including hardware specifications, acquisition times, physiological movement, and the patient's acceptable radiation dose. The upgradation of image-acquiring equipment is not only costly, but it is also limited in its ability to increase the quality of images \cite{yang2023deep}. Therefore, medical images can be post-processed and reconstructed in HR using SR techniques \cite{li2021review} without the need for such an expensive image acquisition approach.
+
+Upscaling medical images is a challenge mainly because most of them (CT, MRI, and X-ray) have relatively poor contrast. Secondly, since SR is an ill-posed inverse problem, there are a number of SR outputs for every LR input \cite{bertero1998introduction}. Thirdly, medical image SR does not provide ground truth training datasets like natural image SR does. The primary goal of medical image enhancement efforts has been to enhance the ability to perceive blurry or unclear images visually. The discontinuities of image intensity curves are represented by edges. A strong edge enhancement method is therefore necessary to process these discontinuities in an image.
+
+\end{document}
