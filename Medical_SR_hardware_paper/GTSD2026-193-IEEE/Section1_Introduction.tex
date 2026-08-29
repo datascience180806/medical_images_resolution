@@ -36,6 +36,8 @@ Motivated by these challenges, this paper presents an end-to-end hardware-softwa
     \item We implement an end-to-end PYNQ-based deployment with AXI DMA streaming and overlap-and-save tiling, validating the system across comprehensive clinical benchmarks (NIH ChestX-ray14 and Pediatric Pneumonia datasets) in terms of reconstruction fidelity, inference latency, and energy efficiency.
 \end{itemize}
 
+The remainder of this paper is organized as follows. Section~\ref{sec:related_work} reviews the related work on medical image super-resolution algorithms and FPGA-based deep learning accelerators. Section~\ref{sec:proposed_system} details the proposed hardware-software co-design framework, including the QAT Q7 quantization scheme and the RTL accelerator architecture. Section~\ref{sec:result_analysis} presents the experimental results and performance evaluation across objective image quality metrics, hardware resource utilization, and energy efficiency. Finally, Section~\ref{sec:conclusion} concludes the paper and outlines directions for future research.
+
 \bibliographystyle{IEEEtran}
 \bibliography{bib/references}
 
