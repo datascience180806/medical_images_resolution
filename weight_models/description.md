@@ -1,24 +1,26 @@
-# 📋 Hướng Dẫn Kỹ Thuật & Mô Tả Trọng Số 5 Mô Hình Super-Resolution (2x)
+# 📋 Hướng Dẫn Kỹ Thuật & Mô Tả Trọng Số Các Mô Hình Super-Resolution (2x)
 
-Tài liệu này tổng hợp thông số kỹ thuật, cấu trúc mạng, định dạng checkpoint và mã nguồn suy luận (inference) cho **5 mô hình Single Image Super-Resolution (SISR)** đã được huấn luyện trên tập dữ liệu ảnh y tế (Medical Chest X-Ray) ở tỉ lệ phóng đại **x2**.
+Tài liệu này tổng hợp thông số kỹ thuật, cấu trúc mạng, định dạng checkpoint và mã nguồn suy luận (inference) cho các mô hình **Single Image Super-Resolution (SISR)** đã được huấn luyện trên tập dữ liệu ảnh y tế **NIH ChestX-ray14** ở tỉ lệ phóng đại **x2** và lưu tại thư mục [`weight_models/2x/`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/2x).
 
-> [!IMPORTANT]
-> **Lưu ý về tiến trình huấn luyện:**
-> Quá trình training trên Kaggle (Dual GPU T4) bị gián đoạn giữa chừng nên hầu hết các mô hình **chưa chạy đủ 20 epochs**. Một số file trọng số được lưu dưới dạng **Checkpoint Dict** (chứa metadata `best_psnr`, `best_ssim`, `epoch`), trong khi một số khác được lưu dưới dạng **Pure `state_dict`**. Vui lòng sử dụng hàm load mẫu ở Mục 3 để tự động xử lý cả 2 định dạng.
+> [!NOTE]
+> **Định dạng checkpoint:**
+> Toàn bộ các file `.pth` trong thư mục `weight_models/2x/` đều được lưu dưới dạng **Checkpoint Dict** chứa đầy đủ metadata (`model_name`, `upscale_factor`, `epoch`, `best_epoch`, `best_psnr`, `best_ssim`, `state_dict`, `history`). Trọng số mạng `state_dict` đã được làm sạch (không chứa tiền tố `module.`), sẵn sàng load trực tiếp trên cả CPU và GPU.
 
 ---
 
-## 1. Bảng Tổng Hợp Trọng Số & Trạng Thái Mô Hình
+## 1. Bảng Tổng Hợp Trọng Số & Trạng Thái Mô Hình (Scale 2x)
 
 | Tên File Trọng Số | Tên Mô Hình | Dung Lượng | Số Tham Số | Định Dạng File | Epoch Đạt Được | Best PSNR (dB) | Best SSIM | Cơ Chế Upsampling |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| [`srcnn_2x.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/srcnn_2x.pth) | **SRCNN** | 0.27 MB | 69,251 | Pure `state_dict` | Interrupted | — | — | Pre-upsampling (Bicubic $\times 2$ nội suy trước) |
-| [`espcn_2x.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/espcn_2x.pth) | **ESPCN** | 0.11 MB | 26,796 | Pure `state_dict` | Interrupted | — | — | Post-upsampling (PixelShuffle / Sub-pixel Conv) |
-| [`fsrcnn_2x.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/fsrcnn_2x.pth) | **FSRCNN** | 0.10 MB | 24,683 | Checkpoint Dict | Epoch 15 | 9.84 dB* | 0.3511* | Post-upsampling (ConvTranspose2d / Deconvolution) |
-| [`vdsr_2x.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/vdsr_2x.pth) | **VDSR** | 2.56 MB | 668,227 | Checkpoint Dict | Epoch 4 | **45.87 dB** | **0.9745** | Pre-upsampling + Global Residual Learning |
-| [`edsr_2x.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/edsr_2x.pth) | **EDSR** | 2.99 MB | 779,011 | Checkpoint Dict | Epoch 4 | **44.78 dB** | **0.9759** | Post-upsampling (PixelShuffle) + 8 ResBlocks |
+| [`srcnn.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/2x/srcnn.pth) | **SRCNN** | 0.28 MB | 69,251 | Checkpoint Dict | **Epoch 10/10** | **43.01 dB** | **0.9736** | Pre-upsampling (Bicubic $\times 2$ nội suy trước) |
+| [`espcn.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/2x/espcn.pth) | **ESPCN** | 0.11 MB | 26,796 | Checkpoint Dict | **Epoch 10/10** | **37.97 dB** | **0.9633** | Post-upsampling (PixelShuffle / Sub-pixel Conv) |
+| [`fsrcnn.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/2x/fsrcnn.pth) | **FSRCNN** | 0.10 MB | 24,683 | Checkpoint Dict | **Epoch 10/10** | **27.62 dB** | **0.9169** | Post-upsampling (ConvTranspose2d / Deconvolution) |
+| [`vdsr.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/2x/vdsr.pth) | **VDSR** | 2.55 MB | 668,227 | Checkpoint Dict | **Epoch 1 (Best)** | **45.34 dB** | **0.9772** | Pre-upsampling + Global Residual Learning (20 layers) |
+| [`srgan.pth`](file:///c:/Users/Admin/Documents/viet_code/repo_github/Super-Resolution-for-Medical-Images/weight_models/2x/srgan.pth) | **SRGAN** | 5.43 MB | ~1.40M | Checkpoint Dict | **Epoch 10/10** | **42.00 dB** | **0.9655** | Post-upsampling (PixelShuffle) + 16 Residual Blocks |
 
-*\*Ghi chú về FSRCNN:* Do tầng Deconvolution huấn luyện từ đầu cùng hàm kích hoạt PReLU nhạy cảm với learning rate nên mô hình gặp hiện tượng gradient divergence/dao động biên độ màu trong quá trình train dở dang.
+*Ghi chú:*
+* **VDSR:** File lưu checkpoint tốt nhất đạt PSNR cực cao ($45.34\text{ dB}$, SSIM $0.9772$).
+* **EDSR:** Đã hoàn thành 10 epochs trên Kaggle đạt PSNR $42.60\text{ dB}$, SSIM $0.9787$. Khi bạn bổ sung `edsr.pth`, mô hình sử dụng cấu hình 8 Residual Blocks.
 
 ---
 
@@ -27,6 +29,7 @@ Tài liệu này tổng hợp thông số kỹ thuật, cấu trúc mạng, đ�
 Để nạp trọng số thành công, mô hình trong mã nguồn inference phải khớp 100% với định nghĩa lớp sau:
 
 ```python
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -179,6 +182,56 @@ class EDSR(nn.Module):
         res = res + x_head
         out = self.tail(self.upsampler(res))
         return torch.clamp(out, 0.0, 1.0)
+
+
+# ====================================================================
+# 6. SRGAN Generator (Ledig et al., CVPR 2017)
+# ====================================================================
+class SRGANResidualBlock(nn.Module):
+    def __init__(self, channels=64):
+        super(SRGANResidualBlock, self).__init__()
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.prelu = nn.PReLU(num_parameters=channels)
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
+
+    def forward(self, x):
+        residual = self.prelu(self.bn1(self.conv1(x)))
+        residual = self.bn2(self.conv2(residual))
+        return x + residual
+
+class SRGAN(nn.Module):
+    def __init__(self, in_channels=3, num_channels=64, num_blocks=16, upscale_factor=2):
+        super(SRGAN, self).__init__()
+        self.upscale_factor = upscale_factor
+        self.initial = nn.Sequential(
+            nn.Conv2d(in_channels, num_channels, kernel_size=9, padding=4),
+            nn.PReLU(num_parameters=num_channels)
+        )
+        self.residual = nn.Sequential(*[SRGANResidualBlock(num_channels) for _ in range(num_blocks)])
+        self.mid_conv = nn.Sequential(
+            nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(num_channels)
+        )
+        num_upsample = max(1, int(math.log2(upscale_factor)))
+        upsample_layers = []
+        for _ in range(num_upsample):
+            upsample_layers.extend([
+                nn.Conv2d(num_channels, num_channels * 4, kernel_size=3, padding=1),
+                nn.PixelShuffle(2),
+                nn.PReLU(num_parameters=num_channels)
+            ])
+        self.upsampler = nn.Sequential(*upsample_layers)
+        self.final_conv = nn.Conv2d(num_channels, in_channels, kernel_size=9, padding=4)
+
+    def forward(self, x):
+        initial = self.initial(x)
+        res = self.residual(initial)
+        mid = self.mid_conv(res) + initial
+        up = self.upsampler(mid)
+        out = (torch.tanh(self.final_conv(up)) + 1.0) / 2.0
+        return torch.clamp(out, 0.0, 1.0)
 ```
 
 ---
@@ -190,6 +243,7 @@ Vì các file checkpoint có thể chứa cả từ khóa metadata (`epoch`, `st
 ```python
 import os
 import torch
+import torch.nn as nn
 
 def load_sr_model(model_name: str, weight_path: str, device: str = "cpu") -> nn.Module:
     """
@@ -209,6 +263,8 @@ def load_sr_model(model_name: str, weight_path: str, device: str = "cpu") -> nn.
         model = VDSR(in_channels=3, upscale_factor=upscale_factor)
     elif model_name == "EDSR":
         model = EDSR(in_channels=3, upscale_factor=upscale_factor, n_feats=64, n_resblocks=8)
+    elif model_name == "SRGAN":
+        model = SRGAN(in_channels=3, upscale_factor=upscale_factor)
     else:
         raise ValueError(f"Không hỗ trợ mô hình: {model_name}")
 
@@ -288,11 +344,11 @@ def run_single_image_inference(image_path: str, model_name: str, weight_path: st
     print(f">> Đã lưu ảnh siêu phân giải tại: {output_path} (Kích thước: {sr_pil.size})")
 
 if __name__ == "__main__":
-    # Ví dụ minh họa chạy mô hình EDSR
-    model_choice = "EDSR"
-    weight_file = "edsr_2x.pth"
-    test_image = "../data/test_xray.png" # Đường dẫn ảnh test
-    result_image = "./results/edsr_sr_2x.png"
+    # Ví dụ minh họa chạy mô hình SRCNN
+    model_choice = "SRCNN"
+    weight_file = "weight_models/2x/srcnn.pth"
+    test_image = "eval_images/00001255_011.png" # Hoặc bất kỳ ảnh nào trong eval_images
+    result_image = "./results/srcnn_sr_2x.png"
 
     if os.path.exists(weight_file) and os.path.exists(test_image):
         run_single_image_inference(test_image, model_choice, weight_file, result_image)
