@@ -38,38 +38,35 @@ Similarly, while Generative Adversarial Networks (GANs) such as SRGAN \cite{ledi
 
 Accelerating deep convolutional networks on Field-Programmable Gate Arrays (FPGAs) has garnered widespread interest due to their deterministic latency, fine-grained reconfigurability, and competitive energy efficiency \cite{sze2017efficient, mittal2020survey}. Convolutional operations are fundamentally memory-intensive; repeatedly fetching overlapping $K \times K$ receptive fields from off-chip dynamic RAM (DRAM) quickly saturates external memory bandwidth, causing severe throughput degradation known as the ``memory wall'' \cite{sze2017efficient}. To resolve this bottleneck, state-of-the-art RTL accelerators employ 2D line-buffer topologies composed of on-chip Block RAMs (BRAMs) and cascading shift-registers. A line buffer caches only $K-1$ rows of pixels on-chip, enabling single-port streaming data ingestion while simultaneously feeding a complete $K \times K$ spatial kernel to the compute core on every clock cycle. Concurrently, a parallel MAC array paired with a balanced, pipelined adder reduction tree processes all $K^2$ multiplications and summations concurrently, achieving an optimal computational throughput of one output pixel per clock cycle without stalling \cite{sze2017efficient, mittal2020survey}.
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{Comparison of FPGA-Based Super-Resolution Accelerators}
 \label{tab:fpga_comparison}
-\renewcommand{\arraystretch}{1.25}
-\setlength{\tabcolsep}{2.5pt}
-\resizebox{\columnwidth}{!}{%
-\begin{tabular}{lccccc}
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{5pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccc}
 \hline
-\textbf{Metric / Feature} & \textbf{Mao \textit{et al.} \cite{mao2020fdna}} & \textbf{Liu \textit{et al.} \cite{liu2024high}} & \textbf{Chang \textit{et al.} \cite{chang2024hdsuper}} & \textbf{Huang \textit{et al.} \cite{huang2026uasr}} & \textbf{This Work} \\
+\textbf{Work} & \textbf{Target Platform} & \textbf{DSPs Used} & \textbf{Full-Chip Power} & \textbf{Throughput / Latency} & \textbf{Precision} & \textbf{Application / Model} \\
 \hline
-Year & 2020 & 2024 & 2024 & 2026 & 2026 \\
-Model Architecture & F-DNA (FSRCNN) & Edge SR & HDSuper (LSR) & UASR-A & \textbf{Compact SRCNN} \\
-Target Platform & Xilinx FPGA & Xilinx FPGA & Xilinx FPGA & ZCU102 & \textbf{Zynq-7020 (PYNQ-Z2)} \\
-DSPs Used & 1512 & 1210 & 704 & 181 (7.2\%) & \textbf{120 (54.5\%)} \\
-Full-Chip Power & 5.40 W & 16.85 W & 2.08 W & 2.88 W & \textbf{1.438 W}$^\ast$ \\
-Throughput & 62.7 fps (UHD) & 35.8 fps (FHD) & 81.0 fps (FHD) & 83.0 fps (FHD) & \textbf{157.9 patches/s}$^\dagger$ \\
-Processing Latency & -- & -- & -- & -- & \textbf{6.33 ms/patch} \\
-Arithmetic Precision & Fixed 13-bit & Fixed 8-bit & Fixed 16-bit & Fixed 16-bit & \textbf{PTQ Q7 (INT8)} \\
-Target Domain & Natural Images & Natural Images & Natural Images & Natural Images & \textbf{Chest X-Ray Radiography} \\
+Mao \textit{et al.} \cite{mao2020fdna} (2020) & Xilinx FPGA & 1512 & 5.40 W & 62.7 fps (UHD) & Fixed 13-bit & Natural Images / F-DNA (FSRCNN) \\
+Liu \textit{et al.} \cite{liu2024high} (2024) & Xilinx FPGA & 1210 & 16.85 W & 35.8 fps (FHD) & Fixed 8-bit & Natural Images / Edge SR \\
+Chang \textit{et al.} \cite{chang2024hdsuper} (2024) & Xilinx FPGA & 704 & 2.08 W & 81.0 fps (FHD) & Fixed 16-bit & Natural Images / HDSuper (LSR) \\
+Huang \textit{et al.} \cite{huang2026uasr} (2026) & Xilinx ZCU102 & 181 (7.2\%) & 2.88 W & 83.0 fps (FHD) & Fixed 16-bit & Natural Images / UASR-A \\
 \hline
-\multicolumn{6}{l}{\footnotesize $^\ast$ PL dynamic power: 0.047~W. $^\dagger$ 100~MHz streaming RTL pipeline.}
+\textbf{This Work} & \textbf{Xilinx Zynq-7020} & \textbf{120 (54.5\%)} & \textbf{1.438 W} & \textbf{157.9 patches/s} & \textbf{PTQ Q7 (INT8)} & \textbf{Medical X-Ray / SRCNN} \\
+ & (PYNQ-Z2 Edge SoC) & (PL Dynamic: 0.047 W) & (Full-Chip Total) & (6.33 ms/patch) & (S7.0 / S0.7) & (100 MHz Streaming RTL) \\
+\hline
 \end{tabular}%
 }
-\end{table}
+\end{table*}
 
 Despite these advancements, a critical resource and thermal gap remains in existing FPGA-based SR acceleration literature. Recent notable contributions, such as the deconvolutional acceleration engine F-DNA by Mao \textit{et al.} \cite{mao2020fdna}, the real-time edge accelerator by Liu \textit{et al.} \cite{liu2024high}, the lightweight co-design accelerator HDSuper by Chang \textit{et al.} \cite{chang2024hdsuper}, and the edge attention accelerator UASR-A by Huang \textit{et al.} \cite{huang2026uasr}, have demonstrated commendable reconstruction throughput. However, as benchmarked in Table~\ref{tab:fpga_comparison}, these accelerators primarily target high-tier or mid-range FPGA platforms (e.g., ZCU102 or large Virtex/Kintex devices) with expansive logic fabrics, consuming between 181 and 1512 DSP blocks and operating within a 2.08~W to 16.85~W thermal envelope. Such hardware resource footprints are fundamentally incompatible with entry-level, cost-sensitive edge devices (e.g., the low-cost Xilinx Zynq-7020 with only 220 total DSP slices) and strict sub-1.5~W full-chip power constraints required by portable bedside radiography and point-of-care medical modalities. Furthermore, existing accelerators exclusively evaluate natural photography benchmarks (such as Set5 and Set14), overlooking clinical diagnostic fidelity, boundary tiling discontinuities, and quantization-induced radiological feature preservation.
 
 To bridge this research gap, our work demonstrates that a hardware-tailored 3-layer SRCNN with 8-bit Post-Training Quantization (PTQ Q7) implemented on an entry-level Xilinx Zynq-7020 SoC achieves high clinical reconstruction fidelity (39.28~dB PSNR, 0.9598 SSIM on Chest X-Ray radiography) while utilizing only 120 DSP48E1 slices (54.55\% of budget) and dissipating merely 1.438~W full-chip power (with an ultra-low PL dynamic power of 0.047~W).
 
-% Page break to cleanly isolate standalone bibliography and avoid column bleeding
-\newpage
+% Page break to cleanly isolate standalone bibliography and avoid column bleeding (commented out to eliminate blank trailing whitespace)
+% \newpage
 \bibliographystyle{IEEEtran}
 \bibliography{bib/references}
 \end{document}
