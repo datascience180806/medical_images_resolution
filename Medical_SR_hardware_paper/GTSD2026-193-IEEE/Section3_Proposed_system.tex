@@ -21,18 +21,40 @@
 % III-A. OVERALL SYSTEM ARCHITECTURE & CO-DESIGN WORKFLOW
 % =========================================================================
 \subsection{Overall System Architecture and HW/SW Co-Design Workflow}
-% Outline & Key Concepts:
-% 1. Heterogeneous SoC Architecture: Partitioning between Processing System (PS, ARM Cortex-A9) and Programmable Logic (PL, Artix-7 fabric on Xilinx Zynq-7020).
-% 2. Division of Responsibilities:
-%    - PS (Host): Image loading, bicubic pre-interpolation (scale s=2), overlap-tiling partitioning, S7.0 fixed-point data formatting, DMA buffer allocation, and post-processing canvas stitching.
-%    - PL (Accelerator Core): High-throughput streaming 3-layer convolutional inference with line buffers, parallel MACs, and pipelined adder trees running at 100 MHz.
-% 3. High-Bandwidth Data Interconnect: AXI4-Stream interface paired with AXI Direct Memory Access (DMA) engine via high-performance (HP) slave ports to achieve low-latency tile streaming.
-% 4. Figure Placeholder: Fig. 2 (Overview of end-to-end co-design pipeline: PS host workflow, DMA streaming, and PL hardware overlay).
+
+Deploying deep super-resolution models on resource-constrained edge modalities presents a fundamental architectural dilemma: general-purpose embedded CPUs lack the parallel compute throughput required for real-time multi-channel 2D convolutions, whereas purely autonomous FPGA implementations suffer from severe development complexity regarding file system I/O, peripheral interfacing, and dynamic memory orchestration. To overcome these constraints, we propose a balanced, end-to-end hardware-software co-design architecture deployed on the Xilinx Zynq-7020 System-on-Chip (SoC). As illustrated in Fig.~\ref{fig:sw_hw_architecture}, the proposed framework is organized into three collaborative computing tiers: (1) a host-level software pre- and post-processing tier, (2) an embedded Processing System (PS) data control and routing tier, and (3) a dedicated Programmable Logic (PL) streaming hardware accelerator.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{SW-HW_architeture.jpg}
+\caption{End-to-end heterogeneous hardware-software co-design architecture across the three computing tiers: (1) Host software/Python environment for image I/O, serialization, and post-processing reconstruction, (2) Zynq PS (ARM Cortex-A9) for memory management and non-blocking AXI DMA transfer coordination, and (3) Zynq PL custom streaming hardware accelerator executing pipelined convolutional inference at 100~MHz.}
+\label{fig:sw_hw_architecture}
+\end{figure*}
+
+\subsubsection{Host Software Pre- and Post-Processing Tier}
+The uppermost software tier, executed within a Python runtime environment, manages high-level clinical image ingestion, data standardization, and final super-resolution image reconstruction. Given an input low-resolution (LR) medical radiograph $I_{LR}$ (e.g., $256 \times 256$ pixels), the software pre-processing pipeline performs dynamic range scaling, extracts structural coordinate patches, and serializes the multi-dimensional image arrays into continuous 1D data streams (formatted as structured text or raw binary buffers). Following hardware acceleration, the software post-processing module receives the raw streaming outputs, deserializes the 1D data stream back into 2D spatial coordinates, reverses dynamic range normalization, and reconstructs the target high-resolution (HR) diagnostic frame $I_{SR}$ (e.g., $1024 \times 1024$ pixels). By offloading non-computational image I/O and format conversions to the host environment, the hardware accelerator remains entirely dedicated to dense arithmetic execution.
+
+\subsubsection{Processing System (PS) Data Control and DMA Routing Tier}
+The intermediate tier is hosted on the Zynq Processing System (PS), which incorporates a dual-core ARM Cortex-A9 processor running an embedded Linux kernel with the Xilinx PYNQ runtime environment. The PS acts as the intelligent orchestration bridge between high-level software data structures and the physical hardware logic. To prevent CPU memory-copy bottlenecks during large-volume data transfers, the PS configures and supervises an on-chip AXI Direct Memory Access (AXI DMA) engine connected via 64-bit High-Performance (HP) slave ports.
+
+Memory management is established using physically contiguous buffers allocated in shared off-chip DDR3 DRAM via the `pynq.allocate` memory manager. The PS initiates asynchronous, bidirectional DMA transfers without CPU polling: the transmit channel (\textit{Memory-Mapped to Stream}, MM2S) fetches serialized input image buffers from system DDR memory and injects them directly into the hardware accelerator, while the receive channel (\textit{Stream to Memory-Mapped}, S2MM) concurrently captures the super-resolved output stream and writes it back into destination DRAM buffers. This decoupled DMA streaming architecture ensures maximum memory bandwidth utilization while maintaining near-zero CPU overhead during active inference cycles.
+
+\subsubsection{Programmable Logic (PL) Hardware Acceleration Core}
+The bottom tier comprises the custom RTL accelerator instantiated within the Zynq-7020 Programmable Logic (PL), synthesized to operate at a deterministic system clock frequency of 100~MHz. The accelerator datapath conforms to standard AXI4-Stream handshaking protocols to guarantee backpressure-safe, stall-free data ingestion and emission:
+\begin{itemize}
+    \item \textbf{AXI4-Stream Slave Interface:} Continuously ingests streaming input pixels under `TVALID`/`TREADY` handshaking, routing input activations directly into on-chip 2D line-buffer memory blocks.
+    \item \textbf{Pipelined Convolutional Datapath:} Processes intermediate activations sequentially through an initial feature extraction layer (Conv1 paired with parametric non-linear activation), cascaded feature mapping stages (such as multiple residual blocks paired with an element-wise skip connection for residual accumulation), a high-resolution reconstruction stage (spatial upsampling), and a final projection convolution. 
+    \item \textbf{Training vs. Deployment Partitioning:} Crucially, while adversarial discriminator networks and perceptual loss models are leveraged off-line during the training phase to guide parameter convergence, only the deterministic forward generator architecture is mapped onto the FPGA fabric for real-time edge clinical deployment, entirely avoiding idle logic consumption.
+    \item \textbf{AXI4-Stream Master Interface:} Packs the reconstructed output pixels into continuous stream packets and asserts the `TLAST` sideband signal upon completing the final pixel of each tile, thereby triggering the DMA receive engine to commit the reconstructed data to system memory.
+\end{itemize}
+
+The subsequent subsections detail the mathematical formulation of our compact network topology (Section~\ref{sec:topology}), the fixed-point quantization scheme (Section~\ref{sec:quantization}), the boundary-safe overlap-tiling strategy (Section~\ref{sec:tiling}), and the internal microarchitecture of the streaming RTL pipeline (Section~\ref{sec:rtl_arch}).
 
 % =========================================================================
 % III-B. COMPACT SRCNN NETWORK TOPOLOGY & TRAINING PROTOCOL
 % =========================================================================
 \subsection{Compact SRCNN Network Topology and Pre-Quantization Training}
+\label{sec:topology}
 % Outline & Key Concepts:
 % 1. Architectural Justification: Custom 3-layer lightweight CNN (1 -> 16 -> 8 -> 1) with kernel sizes 9-1-5, totaling only 1,624 weights and 25 biases (1,649 parameters), compared to standard SRCNN's 8,032 parameters.
 % 2. Mathematical Definition of Layers:
@@ -57,6 +79,7 @@ F_3(Y) = W_3 * F_2(Y) + B_3
 % III-C. FIXED-POINT MATHEMATICAL FORMULATION & POST-TRAINING QUANTIZATION
 % =========================================================================
 \subsection{Fixed-Point Mathematical Formulation and Post-Training Quantization (PTQ Q7)}
+\label{sec:quantization}
 % Outline & Key Concepts:
 % 1. Motivation: Complete elimination of floating-point arithmetic units (FPU) to maximize logic density and energy efficiency on Zynq-7020.
 % 2. Data Format Definition:
@@ -93,6 +116,7 @@ I_{out}(i, j) = \min\left(\max\left(0,\, \left\lfloor A_3(i, j) \gg 7 \right\rfl
 % III-D. HARDWARE-AWARE OVERLAP-TILING & BOUNDARY ARTIFACT ELIMINATION
 % =========================================================================
 \subsection{Hardware-Aware Overlap-Tiling and Boundary Artifact Elimination}
+\label{sec:tiling}
 % Outline & Key Concepts:
 % 1. Problem: Arbitrary large radiograph resolutions (1024x1024 to 2048x2048) far exceed FPGA on-chip BRAM capacity (140 BRAM blocks).
 % 2. Receptive Field & Valid Core Derivation:
@@ -124,6 +148,7 @@ H_{pad} = N_R \cdot S + 2M, \quad W_{pad} = N_C \cdot S + 2M
 % III-E. STREAMING RTL ACCELERATOR MICROARCHITECTURE (ZYNQ-7020 PL)
 % =========================================================================
 \subsection{Streaming RTL Accelerator Microarchitecture}
+\label{sec:rtl_arch}
 % Outline & Key Concepts:
 % 1. 2D Line-Buffer Design:
 %    - BRAM-based shift-register cascade caching K-1 rows per convolutional stage.
