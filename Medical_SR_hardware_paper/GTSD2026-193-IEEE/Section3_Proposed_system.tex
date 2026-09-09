@@ -15,6 +15,9 @@
 \begin{document}
 \bstctlcite{IEEEexample:BSTcontrol}
 
+% Initialize section counter to 2 so this section compiles cleanly as Section III (with subsections III-A through III-E)
+\setcounter{section}{2}
+
 \section{Proposed Hardware-Software Co-Design Framework}
 
 % =========================================================================
@@ -99,10 +102,12 @@ The original SRCNN proposed by Dong \textit{et al.} \cite{dong2014learning} inco
     Crucially, Layer~3 produces a strictly linear output without ReLU activation. Omitting non-linear thresholding at the reconstruction stage prevents the clipping of negative residual details, ensuring full preservation of the diagnostic radiological contrast range in bone structures and soft lung tissues. This stage consumes $5 \times 5 \times 8 \times 1 = 200$ weights and 1 bias.
 \end{enumerate}
 
-Across the three layers, the compact network comprises exactly $1,296 + 128 + 200 = 1,624$ convolutional weights and $16 + 8 + 1 = 25$ biases, establishing an ultra-compact parameter footprint of $1,649$ total parameters ($\approx 79.5\%$ reduction compared to baseline SRCNN).
+Across the three layers, the compact network comprises exactly $1,296 + 128 + 200 = 1,624$ convolutional weights and $16 + 8 + 1 = 25$ biases, establishing an ultra-compact parameter footprint of $1,649$ total parameters. This achieves a $79.8\%$ weight reduction (1,624 vs. 8,032 weights) and a $79.7\%$ total parameter reduction (1,649 vs. 8,129 parameters) compared to baseline SRCNN \cite{dong2014learning}.
 
 \subsubsection{Pre-Quantization Training Protocol}
 To establish an optimal full-precision (FP32) baseline prior to fixed-point hardware quantization, the network is trained using clinical radiographs. We extract 15,000 sub-patches of size $64 \times 64$ pixels from the clinical training split. High-resolution reference patches $X_i$ and low-resolution inputs $Y_i$ (downscaled by factor $s = 2$ and pre-interpolated to match $X_i$) form paired training observations.
+
+Because convolutional operations are inherently translation-invariant and patch-size-agnostic, training on smaller $64 \times 64$ sub-patches accelerates backpropagation convergence, mitigates GPU memory footprint, and maximizes effective spatial augmentation variety across heterogeneous chest anatomies. Conversely, deploying on larger $128 \times 128$ tiles during FPGA inference maximizes the area ratio of the valid reconstructed core to the boundary margin ($112^2 / 128^2 = 76.56\%$), substantially amortizing line-buffer flushing overhead and DMA transfer transactions.
 
 Rather than employing standard Mean Squared Error ($L_2$ loss), which is known to cause structural over-smoothing and penalize diagnostic sharpness, we optimize the network parameters $\theta = \{W_1, W_2, W_3, B_1, B_2, B_3\}$ using the Charbonnier loss function (a differentiable approximation of the $L_1$ norm):
 \begin{equation}
