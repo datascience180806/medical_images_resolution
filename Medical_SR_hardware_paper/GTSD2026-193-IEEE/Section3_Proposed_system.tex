@@ -197,7 +197,7 @@ Equations~\eqref{eq:input_quant}--\eqref{eq:output_dequant} establish an end-to-
 \subsection{Hardware-Aware Overlap-Tiling and Boundary Artifact Elimination}
 \label{sec:tiling}
 
-High-resolution clinical radiographs routinely span dimensions from $1024 \times 1024$ to over $2048 \times 2048$ pixels. Buffering an entire high-resolution frame on-chip alongside intermediate feature tensors requires tens of megabytes of fast memory, far exceeding the total Block RAM budget of edge-class SoCs (the target Zynq-7020 fabric provides only 140 BRAM36K blocks, equivalent to $\approx 4.9$~MB). Consequently, inference must be executed using a tile-by-tile streaming strategy. 
+High-resolution clinical radiographs routinely span dimensions from $1024 \times 1024$ to over $2048 \times 2048$ pixels. Buffering an entire high-resolution frame on-chip alongside intermediate feature tensors requires tens of megabytes of fast memory, far exceeding the total Block RAM budget of edge-class SoCs (the target Zynq-7020 fabric provides only 140 BRAM36K blocks, equivalent to $\approx 630$~KB or 4.92~Mb). Consequently, inference must be executed using a tile-by-tile streaming strategy. 
 
 However, partitioning an image into isolated non-overlapping blocks introduces severe boundary distortions. Valid 2D convolutions shrink spatial boundaries unless zero-padding is applied; yet, applying zero-padding at tile perimeters introduces artificial dark boundary values that propagate across cascading layers, causing prominent step discontinuities known as \textit{blocking artifacts} along reconstruction seams. To resolve this dilemma, we develop a mathematically rigorous, hardware-aware \textbf{Overlap-Tiling} and stitching pipeline.
 
@@ -222,7 +222,7 @@ R = 1 + (9 - 1) + (1 - 1) + (5 - 1) = 13\text{ pixels}
 \end{equation}
 Because spatial convolution symmetrically aggregates neighborhood information around each target coordinate, any output pixel situated within a boundary distance less than:
 \begin{equation}
-M_{min} = \left\lceil \frac{R - 1}{2} \right\rceil = \left\lceil \frac{13 - 1}{2} \right\rceil = 6\text{ pixels}
+M_{min} = \frac{R - 1}{2} = \frac{13 - 1}{2} = 6\text{ pixels}
 \label{eq:margin}
 \end{equation}
 receives incomplete receptive field support. Pixels within this $6$-pixel boundary margin suffer from boundary distortion and must be discarded.
@@ -316,10 +316,10 @@ The core arithmetic workload is executed by an array of dedicated multiplier-acc
 Although the full compact SRCNN topology specifies 1,624 total Multiply-Accumulate (MAC) operations per output pixel ($1,296 + 128 + 200$), naively unrolling all spatial and channel dimensions concurrently would require 1,296 multipliers for Layer~1 alone, consuming nearly $6 \times$ the entire DSP capacity of the XC7Z020 chip (220 DSP48E1 slices). To resolve this resource gap while maintaining high streaming throughput, our microarchitecture implements an efficient \textbf{spatial-parallel and channel-folded (time-multiplexed)} compute scheme:
 \begin{itemize}
     \item \textbf{Layer~1 (Feature Extraction):} Because the incoming radiograph is a single grayscale channel ($C_{in} = 1$), the compute engine instantiates an array of \textbf{81 physical DSP multipliers} that process all 81 spatial pixels of the $9 \times 9$ line-buffer sliding window simultaneously in a single clock cycle. The 81 spatial products are summed via an 81-input balanced reduction adder tree. To generate the 16 output feature maps without replicating physical multipliers, the spatial engine executes a pipelined channel-folded schedule (\textit{T-mux}), streaming intermediate activation channels into subsequent stages while weights are retrieved from on-chip ROM.
-    \item \textbf{Layer~2 (Non-linear Mapping):} Evaluates the $1 \times 1$ pointwise cross-channel transformation ($16 \rightarrow 8$) using pipelined multiplier logic and channel accumulation trees.
+    \item \textbf{Layer~2 (Non-linear Mapping):} Evaluates the $1 \times 1$ pointwise cross-channel transformation ($16 \rightarrow 8$) using time-multiplexed MAC units and LUT-based multipliers paired with a pipelined channel accumulation tree, avoiding dedicated DSP allocation and preserving the chip's limited DSP budget.
     \item \textbf{Layer~3 (Reconstruction):} Instantiates an array of \textbf{25 physical DSP multipliers} to process the $5 \times 5$ spatial synthesis window concurrently, followed by a 25-input pipelined reduction tree and channel accumulation to yield the final single-channel output stream.
 \end{itemize}
-Across the three convolutional stages, system peripherals, and AXI DMA interface logic, the complete implemented design consumes exactly \textbf{120 DSP48E1 slices} (54.55\% of the 220 available on the Zynq-7020), leaving ample headroom for additional system logic.
+Across the three convolutional stages, system peripherals, and AXI DMA interface logic ($81\text{ DSPs in L1} + 25\text{ DSPs in L3} + 14\text{ DSPs in system/interconnect}$), the complete implemented design consumes exactly \textbf{120 DSP48E1 slices} (54.55\% of the 220 available on the Zynq-7020), leaving ample headroom for additional system logic.
 
 \subsubsection{Balanced Pipelined Reduction Adder Trees}
 Directly summing a large number of products in a single clock cycle induces deep combinational logic paths, severely degrading the maximum operational frequency ($F_{max}$). To prevent timing violations, spatial and channel products are summed using balanced multi-stage adder trees with intermediate register insertion.
