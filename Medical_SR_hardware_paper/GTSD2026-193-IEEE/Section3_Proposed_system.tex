@@ -123,37 +123,70 @@ This training regimen achieves a floating-point reconstruction fidelity of 39.31
 % =========================================================================
 \subsection{Fixed-Point Mathematical Formulation and Post-Training Quantization (PTQ Q7)}
 \label{sec:quantization}
-% Outline & Key Concepts:
-% 1. Motivation: Complete elimination of floating-point arithmetic units (FPU) to maximize logic density and energy efficiency on Zynq-7020.
-% 2. Data Format Definition:
-%    - Pixel Activations: Signed S7.0 (1 sign bit, 7 integer bits, 0 fractional bits, range [-128, 127]).
-%    - Model Weights: Signed S0.7 (1 sign bit, 0 integer bits, 7 fractional bits, range [-1.0, +0.992]).
-% 3. Mathematical Quantization Equations:
+
+Deploying deep neural networks in standard IEEE-754 single-precision floating-point (FP32) arithmetic incurs prohibitive hardware overhead on edge-class FPGAs. Floating-point multipliers and adders demand expansive look-up table (LUT) logic and induce deep pipeline latencies that limit clock frequencies. To maximize compute density, minimize on-chip routing congestion, and comply with the strict thermal budget of the Xilinx Zynq-7020 SoC, we formulate an exact 8-bit signed fixed-point Post-Training Quantization scheme, denoted as \textbf{PTQ Q7}.
+
+\begin{figure}[t]
+\centering
+% Placeholder for Fig. 4: The user will draw and save as figures/fixed_point_datapath.png
+\includegraphics[width=\columnwidth]{fixed_point_datapath.png}
+\caption{Hardware fixed-point arithmetic datapath and binary point alignment mechanism: (a) Input pixel conversion to signed S7.0, (b) Convolutional weight quantization into fractional S0.7, (c) Signed multiplication yielding intermediate S7.7 products, (d) Left bit-shifting of bias ($\ll 7$) for binary point synchronization before 24-bit accumulation, and (e) Arithmetic right-shifting ($\gg 7$) with ReLU and saturation clamping.}
+\label{fig:fixed_point_datapath}
+\end{figure}
+
+\subsubsection{Data Representation: S7.0 and S0.7 Number Formats}
+We adopt two complementary signed 8-bit fixed-point representations, following the standard notation $\text{S}(I.F)$, where $\text{S}$ denotes the 2's-complement sign bit, $I$ is the number of integer bits, and $F$ is the number of fractional bits ($1 + I + F = 8\text{ bits}$):
+\begin{itemize}
+    \item \textbf{Pixel Activations ($\text{S7.0}$):} Feature activations across all convolutional layers are represented as signed 8-bit integers with 7 integer bits and 0 fractional bits ($I=7, F=0$). This format spans the discrete dynamic range $[-128,\, 127]$ with a unit step size of $\Delta_X = 1.0$.
+    \item \textbf{Model Weights ($\text{S0.7}$):} Because convolutional weight distributions in our trained model are tightly bounded within the interval $[-1.0,\, 1.0]$, weights are mapped to signed 8-bit fractions with 0 integer bits and 7 fractional bits ($I=0, F=7$). This format represents real values within $[-1.0,\, 1.0 - 2^{-7}] = [-1.0,\, +0.9921875]$ with a fine quantization granularity of $\Delta_W = 2^{-7} = 0.0078125$.
+\end{itemize}
+
+\subsubsection{Input and Weight Quantization Mapping}
+Raw grayscale radiographs are natively stored in unsigned 8-bit integer format ($I_{in} \in [0,\, 255]$). To leverage symmetrical 2's-complement arithmetic on DSP slices and eliminate asymmetrical zero-point offset computation in hardware, an offset of $-128$ is subtracted from each input pixel:
 \begin{equation}
 X^{(0)}(i, j) = \text{clamp}\left(I_{in}(i, j) - 128,\, -128,\, 127\right)
 \label{eq:input_quant}
 \end{equation}
+where $\text{clamp}(x, a, b) = \min(\max(x, a), b)$. This transformation maps $[0,\, 255]$ symmetrically around zero to $[-128,\, 127]$, yielding the initial activation tensor $X^{(0)} \in \text{S7.0}$.
+
+Continuous floating-point weights $W \in [-1.0,\, 1.0]$ are quantized into S0.7 integers by multiplying by scaling factor $2^7 = 128$, rounding to the nearest integer, and clamping against arithmetic saturation boundaries:
 \begin{equation}
 W_q = \text{clamp}\left(\left\lfloor W \cdot 2^7 \right\rceil,\, -128,\, 127\right)
 \label{eq:weight_quant}
 \end{equation}
+where $\lfloor \cdot \rceil$ denotes round-to-nearest integer.
+
+\subsubsection{Convolutional Accumulation and Binary Point Alignment}
+A critical mathematical consideration in fixed-point arithmetic is the alignment of fractional radix points during Multiply-Accumulate (MAC) operations. Multiplying a signed activation $X \in \text{S7.0}$ by a signed weight $W_q \in \text{S0.7}$ produces an intermediate product $P = X \cdot W_q$ with $7 + 0 = 7$ fractional bits, occupying the **$\text{S7.7}$ format** (a 15-bit signed integer with dynamic scale $2^{-7}$).
+
+Because layer biases $B_k$ share the activation dynamic range and are natively quantized in S7.0 format, they cannot be directly added to the S7.7 product sum without inducing catastrophic scale misalignment. To synchronize binary points before accumulation, each bias term $B_k$ is bit-shifted left by 7 positions ($B_k \ll 7 = B_k \cdot 2^7$), lifting its representation into the S7.7 coordinate space. The unified MAC accumulation for output channel $k$ at coordinate $(i, j)$ is formulated as:
 \begin{equation}
 A_k(i, j) = \sum_{c=0}^{C_{in}-1} \sum_{u=0}^{K-1} \sum_{v=0}^{K-1} X_c(i+u, j+v) \cdot W_{k,c}(u, v) + \left(B_k \ll 7\right)
 \label{eq:mac_accumulation}
 \end{equation}
+To prevent arithmetic overflow during large spatial summations, the internal accumulator register bit-width is analyzed. In Layer~1 ($K = 9, C_{in} = 1$), the maximum theoretical sum over $9 \times 9 = 81$ products satisfies:
+\begin{equation}
+\max |A_k| \le 81 \times 128 \times 128 + 128 \times 128 = 1,343,488 < 2^{21}
+\label{eq:accumulator_bound}
+\end{equation}
+Similarly, in Layer~3 ($K=5, C_{in}=8$), the maximum sum over $5 \times 5 \times 8 = 200$ products is bounded by $200 \times 128 \times 128 \approx 3.28 \times 10^6 < 2^{22}$. Consequently, sizing all internal accumulators to **24 bits** provides over 2 bits of guard margin, guaranteeing zero arithmetic overflow under all worst-case image patterns.
+
+\subsubsection{Hidden Layer Activation, Re-Quantization, and Output Recovery}
+To prepare intermediate feature maps for cascading into subsequent convolutional stages, the 24-bit accumulator value $A_k(i, j) \in \text{S7.7}$ must be downscaled back to S7.0 format. This re-quantization is executed through an arithmetic right-shift of 7 bits ($\lfloor A_k \gg 7 \rfloor$), effectively dividing by $2^7$ while truncating fractional bits. 
+
+For hidden layers ($l \in \{1, 2\}$), non-linear activation and saturation clamping are integrated into a single hardware operation:
 \begin{equation}
 X_k^{(l)}(i, j) = \min\left(\max\left(0,\, \left\lfloor A_k(i, j) \gg 7 \right\rfloor\right),\, 127\right), \quad l \in \{1, 2\}
 \label{eq:layer_activation}
 \end{equation}
+The inner $\max(0, \cdot)$ implements the ReLU activation function, whereas the outer $\min(\cdot, 127)$ clamps activations at $+127$, eliminating wrap-around overflow distortion.
+
+Finally, at the reconstruction stage ($l = 3$), Layer~3 operates linearly without ReLU thresholding. The accumulator output $A_3(i, j)$ is arithmetic right-shifted by 7 bits, restored to the unsigned grayscale domain by adding the $+128$ DC offset, and saturated into the valid display range $[0,\, 255]$:
 \begin{equation}
 I_{out}(i, j) = \min\left(\max\left(0,\, \left\lfloor A_3(i, j) \gg 7 \right\rfloor + 128\right),\, 255\right)
 \label{eq:output_dequant}
 \end{equation}
-% 4. Critical Binary Point Alignment Insight:
-%    - Product of (S7.0) * (S0.7) produces S7.7 (7 fractional bits).
-%    - Bias B_k (originally S7.0) must be bit-shifted left by 7 bits (B_k << 7) in Eq. (5) to align binary points before accumulation.
-%    - Intermediate accumulators sized to 24-bit to prevent any arithmetic overflow across large 9x9 summation trees.
-%    - Re-quantization via arithmetic right-shift (>> 7) in Eq. (6) and saturation clamping to prevent wrap-around distortions.
+Equations~\eqref{eq:input_quant}--\eqref{eq:output_dequant} establish an end-to-end fixed-point datapath that requires only integer adders, shifters, and DSP multiplier slices, completely bypassing the silicon and power cost of floating-point units.
 
 % =========================================================================
 % III-D. HARDWARE-AWARE OVERLAP-TILING & BOUNDARY ARTIFACT ELIMINATION
