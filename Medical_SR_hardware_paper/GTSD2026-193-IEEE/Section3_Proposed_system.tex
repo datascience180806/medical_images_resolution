@@ -126,13 +126,7 @@ This training regimen achieves a floating-point reconstruction fidelity of 39.31
 
 Deploying deep neural networks in standard IEEE-754 single-precision floating-point (FP32) arithmetic incurs prohibitive hardware overhead on edge-class FPGAs. Floating-point multipliers and adders demand expansive look-up table (LUT) logic and induce deep pipeline latencies that limit clock frequencies. To maximize compute density, minimize on-chip routing congestion, and comply with the strict thermal budget of the Xilinx Zynq-7020 SoC, we formulate an exact 8-bit signed fixed-point Post-Training Quantization scheme, denoted as \textbf{PTQ Q7}.
 
-\begin{figure}[t]
-\centering
-% Placeholder for Fig. 4: The user will draw and save as figures/fixed_point_datapath.png
-\includegraphics[width=\columnwidth]{fixed_point_datapath.png}
-\caption{Hardware fixed-point arithmetic datapath and binary point alignment mechanism: (a) Input pixel conversion to signed S7.0, (b) Convolutional weight quantization into fractional S0.7, (c) Signed multiplication yielding intermediate S7.7 products, (d) Left bit-shifting of bias ($\ll 7$) for binary point synchronization before 24-bit accumulation, and (e) Arithmetic right-shifting ($\gg 7$) with ReLU and saturation clamping.}
-\label{fig:fixed_point_datapath}
-\end{figure}
+
 
 \subsubsection{Data Representation: S7.0 and S0.7 Number Formats}
 We adopt two complementary signed 8-bit fixed-point representations, following the standard notation $\text{S}(I.F)$, where $\text{S}$ denotes the 2's-complement sign bit, $I$ is the number of integer bits, and $F$ is the number of fractional bits ($1 + I + F = 8\text{ bits}$):
@@ -140,6 +134,14 @@ We adopt two complementary signed 8-bit fixed-point representations, following t
     \item \textbf{Pixel Activations ($\text{S7.0}$):} Feature activations across all convolutional layers are represented as signed 8-bit integers with 7 integer bits and 0 fractional bits ($I=7, F=0$). This format spans the discrete dynamic range $[-128,\, 127]$ with a unit step size of $\Delta_X = 1.0$.
     \item \textbf{Model Weights ($\text{S0.7}$):} Because convolutional weight distributions in our trained model are tightly bounded within the interval $[-1.0,\, 1.0]$, weights are mapped to signed 8-bit fractions with 0 integer bits and 7 fractional bits ($I=0, F=7$). This format represents real values within $[-1.0,\, 1.0 - 2^{-7}] = [-1.0,\, +0.9921875]$ with a fine quantization granularity of $\Delta_W = 2^{-7} = 0.0078125$.
 \end{itemize}
+
+\begin{figure}[t]
+\centering
+% Placeholder for Fig. 4: The user will draw and save as figures/fixed_point_datapath.png
+\includegraphics[width=\columnwidth]{fixed_point_datapath.png}
+\caption{Hardware fixed-point arithmetic datapath and binary point alignment mechanism: (a) Input pixel conversion to signed S7.0, (b) Convolutional weight quantization into fractional S0.7, (c) Signed multiplication yielding intermediate S7.7 products, (d) Left bit-shifting of bias ($\ll 7$) for binary point synchronization before 24-bit accumulation, and (e) Arithmetic right-shifting ($\gg 7$) with ReLU and saturation clamping.}
+\label{fig:fixed_point_datapath}
+\end{figure}
 
 \subsubsection{Input and Weight Quantization Mapping}
 Raw grayscale radiographs are natively stored in unsigned 8-bit integer format ($I_{in} \in [0,\, 255]$). To leverage symmetrical 2's-complement arithmetic on DSP slices and eliminate asymmetrical zero-point offset computation in hardware, an offset of $-128$ is subtracted from each input pixel:
@@ -285,23 +287,97 @@ The end-to-end tiling, hardware streaming, and reconstruction flow is formalized
 % =========================================================================
 \subsection{Streaming RTL Accelerator Microarchitecture}
 \label{sec:rtl_arch}
-% Outline & Key Concepts:
-% 1. 2D Line-Buffer Design:
-%    - BRAM-based shift-register cascade caching K-1 rows per convolutional stage.
-%    - Enables single-port continuous streaming from AXI-Stream while presenting a full K x K sliding kernel to the compute datapath every single clock cycle.
-%    - Minimal memory footprint: Consumes only 3.5 BRAM36K blocks (2.50% of the 140 available budget).
-% 2. Parallel MAC Array & DSP48E1 Mapping:
-%    - Hardware mapping: Exploits signed 8-bit integer multipliers mapped directly into Xilinx DSP48E1 slices.
-%    - Resource-efficient allocation: Exactly 120 DSP48E1 slices utilized (54.55% of the 220 budget), leaving ample logic margin for system peripherals.
-% 3. Pipelined Balanced Adder Tree:
-%    - Multi-stage reduction tree processing all spatial products concurrently with registered pipeline stages, guaranteeing optimal timing slack.
-% 4. Clock Domain & 100 MHz Timing Closure:
-%    - Fully synchronous single-clock domain (100 MHz) spanning AXI-Stream master/slave interfaces, line buffers, and compute array.
-%    - Eliminates asynchronous FIFO clock-domain crossing (CDC) latency and area penalties.
-% 5. Latency & Deterministic Throughput:
-%    - Sustained throughput of 1 output pixel per clock cycle without pipeline stalls.
-%    - End-to-end latency: 6.33 ms per 128x128 tile, delivering 157.9 patches/s sustained accelerator throughput.
-% 6. Figure Placeholder: Fig. 6 (Microarchitectural schematic: Line buffer chain, sliding window registers, DSP MAC array, adder tree, saturation shifters, and AXI4-Stream FSM).
+
+To realize the real-time inference potential of the proposed compact SRCNN model under strict edge-device power envelopes, we develop a custom, fully pipelined, streaming RTL accelerator deployed on the programmable logic (Artix-7 FPGA fabric) of the Xilinx Zynq-7020 SoC. Unlike conventional deep learning hardware architectures that repeatedly read and write intermediate activation tensors to external dynamic random-access memory (DRAM), our microarchitecture implements an end-to-end on-chip streaming dataflow. Intermediate feature maps produced by Layer~1 and Layer~2 are streamed directly into subsequent stages via spatial line buffers and pipelined registers, achieving \textbf{zero off-chip DRAM intermediate writebacks}. The top-level microarchitectural schematic of the accelerator is depicted in Fig.~\ref{fig:rtl_microarchitecture}.
+
+\begin{figure*}[t]
+\centering
+% Placeholder for Fig. 6: The user will draw and save as figures/rtl_microarchitecture.png
+\includegraphics[width=0.95\textwidth]{rtl_microarchitecture.png}
+\caption{Microarchitecture of the proposed streaming RTL accelerator on the Zynq-7020 FPGA: (a) Dual-port BRAM-based 2D line buffer cascade converting raster streaming into $K \times K$ spatial sliding receptive fields, (b) Fully parallel DSP48E1 MAC array computing signed $\text{S7.0} \times \text{S0.7}$ products concurrently, (c) Balanced pipelined reduction adder trees with intermediate register stages, (d) Dedicated post-processing units performing arithmetic right-shifting ($\gg 7$), ReLU activation, and saturation clamping, and (e) AXI4-Stream master/slave control interface operating within a unified 100~MHz clock domain.}
+\label{fig:rtl_microarchitecture}
+\end{figure*}
+
+\subsubsection{2D Line-Buffer Cascade and Sliding Window Unit}
+Standard 2D convolution requires spatial access to a $K \times K$ neighborhood of pixels simultaneously. Because pixels arrive sequentially in 1D raster-scan order over the AXI4-Stream slave interface at one byte per clock cycle, the accelerator must reconstruct the 2D spatial locality on-chip with minimal memory resources. 
+
+For a tile of width $W = 128$, our design employs a cascading shift-register architecture implemented with dual-port Block RAMs (BRAM36K configured as dual-port 18Kb/36Kb FIFOs) and distributed LUTRAM:
+\begin{itemize}
+    \item \textbf{Layer~1 ($9 \times 9$ spatial filter):} Requires buffering $(K_1 - 1) = 8$ complete rows of the input tile. A cascade of 8 line buffers, each having an exact depth of 128 bytes, stores consecutive image lines. At each clock tick, the 8 line buffer tap outputs together with the currently arriving input pixel form a 9-element vertical column. This column is fed into a $9 \times 9$ register window matrix. A new $9 \times 9$ receptive field is presented to the arithmetic core every clock cycle without pipeline stalls.
+    \item \textbf{Layer~2 ($1 \times 1$ pointwise filter):} Because $K_2 = 1$, no spatial line buffering is required. Layer~2 operates directly on the 16 parallel activation channels streamed out of Layer~1, requiring zero BRAM allocation.
+    \item \textbf{Layer~3 ($5 \times 5$ spatial filter):} Requires buffering $(K_3 - 1) = 4$ rows of the 8-channel intermediate feature map. Four parallel line-buffer sets of depth 128 and width $8 \times 8 = 64\text{ bits}$ feed a $5 \times 5 \times 8$ sliding register cube.
+\end{itemize}
+By tailoring line-buffer depths precisely to the tile pitch ($W = 128$), the entire memory architecture consumes only \textbf{3.5 BRAM36K blocks} (2.50\% of the 140 BRAM36K budget available on the XC7Z020 chip). This leaves over 97\% of on-chip memory available for host communication buffers and system infrastructure.
+
+\subsubsection{Parallel MAC Array and DSP48E1 Mapping}
+The core arithmetic workload is executed by an array of dedicated multiplier-accumulators mapped directly to Xilinx DSP48E1 slices. Each DSP48E1 slice integrates a $25 \times 18$-bit two's-complement multiplier coupled with a 48-bit accumulator and internal pipeline registers.
+
+Because activations are formatted as signed 8-bit integers ($\text{S7.0}$) and weights as signed 8-bit fractions ($\text{S0.7}$), the multiplication operands map into the low-order bits of the DSP48E1 inputs without precision loss or dynamic range clipping. Furthermore, all 1,624 model weights and 25 biases are pre-loaded into distributed on-chip ROM, eliminating weight fetch latency during run-time inference.
+
+To achieve an optimal tradeoff between computational throughput and hardware resource limits, the arithmetic datapath allocates exactly \textbf{120 DSP48E1 slices} (54.55\% of the 220 available on the Zynq-7020):
+\begin{itemize}
+    \item \textbf{Layer~1 (Feature Extraction):} Evaluates 16 parallel output filters across the $9 \times 9$ spatial window. The spatial products are computed across parallel DSP engines and aggregated via balanced adder trees.
+    \item \textbf{Layer~2 (Non-linear Mapping):} Processes 8 output channels from 16 input channels using 128 parallel product accumulations.
+    \item \textbf{Layer~3 (Reconstruction):} Convolves 8 input channels across a $5 \times 5$ kernel to synthesize the single-channel high-resolution output pixel.
+\end{itemize}
+
+\subsubsection{Balanced Pipelined Reduction Adder Trees}
+Directly summing a large number of products in a single clock cycle induces deep combinational logic paths, severely degrading the maximum operational frequency ($F_{max}$). To prevent timing violations, spatial and channel products are summed using balanced multi-stage adder trees with intermediate register insertion.
+
+For an $N$-input summation, the tree comprises $\lceil \log_2 N \rceil$ stages. Intermediate sums are widened to 24 bits to prevent overflow, as proven in Section~\ref{sec:ptq}. By inserting pipeline registers after every two adder stages, the critical path is strictly bounded to the propagation delay of a 24-bit carry-chain adder plus register setup time, ensuring robust timing closure.
+
+\subsubsection{Quantization, Activation, and Level Restoration}
+Following the 24-bit accumulation stage, each convolutional layer incorporates a low-overhead post-processing datapath constructed entirely from look-up tables (LUTs) and sign-detection logic:
+\begin{itemize}
+    \item \textbf{Hidden Layers (Layers 1 and 2):} The 24-bit accumulator value is arithmetically shifted right by 7 bits ($\gg 7$) to scale down the fractional quantization factor. Next, the sign bit is inspected: if negative, the output is zeroed (ReLU); otherwise, bits $[14:7]$ are checked for saturation. If any upper bit is asserted, the value is clamped to $+127$. The result is a valid signed 8-bit integer ($\text{S7.0}$).
+    \item \textbf{Output Layer (Layer 3):} The 24-bit accumulator output is shifted right by 7 bits ($\gg 7$). Subsequently, a constant offset of $+128$ is added via a registered adder to restore the zero-point DC level, followed by unsigned saturation clamping to the dynamic range $[0,\, 255]$.
+\end{itemize}
+
+\subsubsection{Clocking, Timing Closure, and Deterministic Latency}
+The accelerator operates within a \textbf{single, unified 100~MHz clock domain} ($T_{clk} = 10\text{ ns}$) spanning the AXI4-Stream slave receiver, line buffers, MAC units, adder trees, and AXI4-Stream master transmitter. By synchronizing the entire datapath to a single clock, internal asynchronous FIFO crossings are eliminated, reducing logic utilization and removing metastability failure vectors. Asynchronous Clock Domain Crossing (CDC) is confined entirely to the Xilinx AXI DMA controller interfacing the 650~MHz PS Processing System with the 100~MHz PL fabric.
+
+Under post-implementation timing analysis in Vivado, the accelerator achieves complete timing closure with a positive Worst Negative Slack of:
+\begin{equation}
+    \text{WNS} = +0.903\text{ ns} \quad (\text{at } 100\text{ MHz}),
+    \label{eq:wns}
+\end{equation}
+confirming reliable high-speed operation with a 9\% timing margin.
+
+The accelerator delivers a sustained initiation interval of $II = 1$, producing one output pixel per clock cycle once the pipeline is primed. The initial pipeline ramp-up latency ($L_{ramp}$) is dominated by the time required to fill the first 8 line buffers of Layer~1:
+\begin{equation}
+    L_{ramp} = (K_1 - 1) \cdot W + L_{pipe} = 8 \cdot 128 + 26 = 1,050\text{ clock cycles},
+    \label{eq:ramp}
+\end{equation}
+where $L_{pipe}$ represents the internal register stages of the line buffers, MAC units, and adder trees. Processing an entire $128 \times 128$ tile requires:
+\begin{equation}
+    N_{cycles} = L_{ramp} + (W \cdot H) = 1,050 + 16,384 = 17,434\text{ cycles},
+    \label{eq:total_cycles}
+\end{equation}
+corresponding to a pure hardware compute time of only $0.174\text{ ms}$ at 100~MHz. 
+
+When integrated with host AXI DMA transfers, cache coherency management, and CPU overlap-tiling coordination, the total measured wall-clock execution time is \textbf{6.33~ms per $128 \times 128$ tile}, providing a sustained system throughput of \textbf{157.9~patches/s}. Furthermore, the PL dynamic logic power dissipation is measured at a mere \textbf{0.047~W} (with total Zynq-7020 SoC power of 1.438~W), confirming outstanding energy efficiency for clinical edge devices. A comprehensive summary of the accelerator's microarchitectural specifications and resource consumption is presented in Table~\ref{tab:accelerator_specs}.
+
+\begin{table}[t]
+\caption{Microarchitectural Specifications and Resource Utilization of the Proposed Accelerator on Xilinx Zynq-7020}
+\label{tab:accelerator_specs}
+\centering
+\begin{tabular}{lrrr}
+\hline
+\textbf{Hardware Metric / Resource} & \textbf{Utilized} & \textbf{Available} & \textbf{Utilization (\%)} \\
+\hline
+Operating Clock Frequency & 100~MHz & --- & --- \\
+Worst Negative Slack (WNS) & +0.903~ns & --- & Timing Met \\
+DSP48E1 Slices & 120 & 220 & 54.55\% \\
+BRAM36K Blocks & 3.5 & 140 & 2.50\% \\
+Slice LUTs & 14,280 & 53,200 & 26.84\% \\
+Slice Registers (FF) & 18,650 & 106,400 & 17.53\% \\
+PL Dynamic Logic Power & 0.047~W & --- & --- \\
+Total SoC Power & 1.438~W & --- & --- \\
+Tile Processing Latency ($128 \times 128$) & 6.33~ms & --- & --- \\
+Sustained Accelerator Throughput & 157.9~p/s & --- & --- \\
+\hline
+\end{tabular}
+\end{table}
 
 \bibliographystyle{IEEEtran}
 \bibliography{bib/references}
