@@ -24,144 +24,139 @@
 \setcounter{figure}{6}    % Fig. 7 onwards
 \setcounter{table}{1}     % Table II onwards
 
-To validate the clinical efficacy, computational throughput, and hardware efficiency of the proposed co-design framework, we conduct extensive experiments evaluating both image reconstruction fidelity and physical FPGA implementation metrics. This section presents our experimental setup, quantitative and qualitative quality evaluations across 2,100 clinical radiographs, execution profiling, and comprehensive benchmarking against state-of-the-art FPGA super-resolution accelerators.
+This section establishes the empirical evaluation framework to assess the image quality, timing throughput, power dissipation, and hardware resource efficiency of the proposed FPGA accelerator. The experimental analysis is organized into the following structured subsections:
 
 % =========================================================================
-% IV-A. EXPERIMENTAL SETUP AND CLINICAL BENCHMARKS
+% IV-A. EXPERIMENTAL SETUP AND BENCHMARK DATASETS (OUTLINE)
 % =========================================================================
-\subsection{Experimental Setup and Evaluation Protocols}
+\subsection{Experimental Setup and Benchmark Datasets}
 \label{sec:exp_setup}
 
-\subsubsection{Hardware Platform and Deployment Environment}
-The end-to-end co-design framework is deployed on the commercial Xilinx PYNQ-Z2 development board hosting a Zynq-7020 SoC (\texttt{xc7z020clg400-1}). The system architecture is partitioned across two distinct domains:
+\subsubsection{Hardware Platform and Environment Setup}
 \begin{itemize}
-    \item \textbf{Processing System (PS):} Dual-core ARM Cortex-A9 processor running at 650~MHz with 512~MB DDR3 memory, executing an embedded Linux OS (PYNQ Linux v2.6). The PS coordinates file I/O, initial bicubic pre-interpolation, AXI DMA memory allocation, and tile assembly.
-    \item \textbf{Programmable Logic (PL):} Artix-7 equivalent fabric operating within a single 100~MHz clock domain, hosting the proposed streaming RTL accelerator. Data communication between PS and PL is established through a high-performance 64-bit AXI4-Stream Direct Memory Access (DMA) interface.
-\end{itemize}
-Hardware synthesis, placement, routing, and physical timing/power closure were performed using AMD Xilinx Vivado Design Suite (v2020.2). Power dissipation is measured using the Vivado Power Sign-Off Analyzer under full switching activity vectors captured during physical execution.
-
-\subsubsection{Clinical Radiography Benchmarks}
-To ensure robust evaluation without data leakage, all experiments are performed on clinical radiographs strictly held out from model training:
-\begin{enumerate}
-    \item \textbf{NIH ChestX-ray14 Benchmark \cite{wang2017chestxray}:} A large-scale clinical dataset comprising 1,750 high-resolution chest radiographs ($1024 \times 1024$ pixels) exhibiting diverse pulmonary conditions (e.g., effusion, pneumonia, nodule, and cardiomegaly).
-    \item \textbf{Guangzhou Pediatric Pneumonia Benchmark \cite{kermany2018identifying}:} A high-resolution clinical cohort comprising 350 pediatric chest radiographs with variable resolutions ranging from $1000 \times 800$ up to $1638 \times 1236$ pixels, utilized to verify the arbitrary-resolution robustness of the overlap-tiling protocol.
-    \item \textbf{Exploratory Calibration Cohort:} A localized subset of the COVID-19 Radiography database \cite{chowdhury2020can} ($299 \times 299$ pixels) was utilized during initial hyperparameter tuning and fixed-point dynamic range verification before frozen physical evaluation on the 2,100-image clinical benchmark.
-\end{enumerate}
-
-\subsubsection{Evaluated Baselines and Comparative Configurations}
-We benchmark the proposed hardware accelerator against four foundational computing baselines:
-\begin{itemize}
-    \item \textbf{Bicubic Interpolation ($2\times$):} The ubiquitous clinical software standard for real-time radiographic upsampling.
-    \item \textbf{Floating-Point SRCNN (FP32 Baseline):} The unquantized compact network executed in IEEE-754 single-precision floating-point arithmetic on host CPU/GPU via PyTorch.
-    \item \textbf{Bit-Accurate Emulation (Software PTQ Q7):} A software-emulated fixed-point model executing signed integer arithmetic ($\text{S7.0} \times \text{S0.7} \rightarrow \text{S24.7} \gg 7$) identical to RTL logic.
-    \item \textbf{Proposed FPGA Accelerator (Hardware PTQ Q7):} The physical pipelined RTL core executing on the Zynq-7020 PL fabric.
+    \item \textbf{Target SoC:} Xilinx PYNQ-Z2 board featuring the Zynq-7020 SoC (\texttt{xc7z020clg400-1}).
+    \item \textbf{Processing System (PS):} Dual-core ARM Cortex-A9 @ 650~MHz, 512~MB DDR3, running embedded PYNQ Linux (v2.6). Responsible for file I/O, initial bicubic scaling, DMA memory buffer management, and final image stitching.
+    \item \textbf{Programmable Logic (PL):} Artix-7 FPGA fabric running at a unified clock of 100~MHz. Connected to PS via 64-bit AXI4-Stream DMA over the High-Performance (HP) port.
+    \item \textbf{Synthesis and Implementation Tools:} AMD Xilinx Vivado Design Suite 2020.2; power analysis using Vivado Power Sign-off Analyzer under post-route physical constraints.
 \end{itemize}
 
-\subsubsection{Architectural Justification: Pre-Upsampling vs. Post-Upsampling}
-As highlighted in Section~II, architectural selection is paramount for edge-class FPGAs. While post-upsampling topologies (such as FSRCNN using transposed convolution or ESPCN using sub-pixel shuffle) compute lower-dimensional feature maps, their hardware implementation imposes critical penalties. Transposed convolution requires periodic zero-insertion across activations, causing 50\%--75\% of MAC operations to multiply by zero, introducing pipeline stalls and notorious checkerboard artifacts \cite{odena2016deconvolution} that can mimic pathological micro-calcifications. Conversely, sub-pixel convolution demands complex multi-channel shuffling logic that disrupts streaming raster access, inflating LUT utilization by over 40\% for dynamic routing multiplexers. By employing pre-upsampling SRCNN with sliding line buffers, our accelerator guarantees an Initiation Interval of $II=1$ with continuous raster streaming, zero idle arithmetic cycles, and complete immunity to checkerboard artifacts.
+\subsubsection{Benchmark Clinical Datasets}
+\begin{itemize}
+    \item \textbf{NIH ChestX-ray14 \cite{wang2017chestxray}:} Independent test partition of adult chest radiographs ($1024 \times 1024$ pixels) covering diverse thoracic pathologies.
+    \item \textbf{Guangzhou Pediatric Pneumonia \cite{kermany2018identifying}:} Pediatric chest radiographs of varying clinical resolutions (ranging from $1000 \times 800$ up to $1638 \times 1236$ pixels) to evaluate arbitrary-dimension tiling robustness.
+    \item \textbf{Calibration Subset \cite{chowdhury2020can}:} Used exclusively for initial fixed-point dynamic range verification and activation quantization calibration.
+\end{itemize}
+
+\subsubsection{Comparative Evaluation Baselines}
+\begin{itemize}
+    \item \textbf{Bicubic Upsampling ($2\times$):} Standard software baseline widely used in edge medical systems.
+    \item \textbf{FP32 Compact SRCNN:} Software floating-point baseline executed on CPU/GPU.
+    \item \textbf{Fixed-Point Emulation (PTQ Q7 Software):} Bit-accurate Python emulation modeling the exact integer arithmetic of the RTL core.
+    \item \textbf{Proposed FPGA Accelerator:} Hardware execution on the Xilinx Zynq-7020 PL fabric.
+\end{itemize}
 
 % =========================================================================
-% IV-B. IMAGE QUALITY AND RADIOLOGICAL RESTORATION FIDELITY
+% IV-B. IMAGE QUALITY AND QUANTIZATION FIDELITY (OUTLINE)
 % =========================================================================
-\subsection{Image Quality, Quantization Fidelity, and Diagnostic Safety}
+\subsection{Image Quality and Quantization Fidelity Evaluation}
 \label{sec:quality_eval}
 
-\subsubsection{Quantitative Reconstruction Accuracy}
-Table~\ref{tab:image_quality_benchmark} summarizes the quantitative reconstruction fidelity across the 2,100 clinical radiographs, measured via Peak Signal-to-Noise Ratio (PSNR) and Structural Similarity Index Measure (SSIM). 
-
-The proposed FPGA accelerator achieves an average PSNR of \textbf{39.278~dB} and SSIM of \textbf{0.9598} across the combined 2,100 clinical radiographs. This represents a substantial enhancement of \textbf{+2.48~dB in PSNR} and \textbf{+0.0256 in SSIM} over standard bicubic interpolation, demonstrating marked improvements in anatomical boundary clarity and soft-tissue contrast. 
-
-More importantly, comparing the physical FPGA accelerator against the unquantized FP32 model reveals an imperceptible average degradation of merely \textbf{0.035~dB PSNR} and \textbf{0.0004 SSIM}. This negligible delta confirms that the derived 8-bit fixed-point post-training quantization (PTQ Q7) and multi-layer saturation datapath preserve virtually identical numerical accuracy to double/single-precision scientific computing, validating our theoretical error bounds derived in Section~III-C.
+\subsubsection{Quantitative Metrics Protocol}
+To evaluate image restoration quality and quantization-induced precision loss, the following objective metrics will be reported:
+\begin{itemize}
+    \item Peak Signal-to-Noise Ratio (PSNR in dB) and Structural Similarity Index (SSIM).
+    \item Quantization Loss: $\Delta\text{PSNR} = \text{PSNR}_{\text{FPGA}} - \text{PSNR}_{\text{FP32}}$ and $\Delta\text{SSIM} = \text{SSIM}_{\text{FPGA}} - \text{SSIM}_{\text{FP32}}$.
+    \item Performance gain over standard bicubic interpolation ($\text{PSNR}_{\text{FPGA}} - \text{PSNR}_{\text{Bicubic}}$).
+\end{itemize}
 
 \begin{table*}[t]
-\caption{Quantitative Image Quality and Quantization Degradation Benchmark Across 2,100 Clinical Chest Radiographs}
+\caption{Quantitative Image Quality and Quantization Degradation Framework Across Clinical Datasets [Outline Skeleton]}
 \label{tab:image_quality_benchmark}
 \centering
 \begin{tabular}{lc|cc|cc|cc|cc}
 \hline
-\textbf{Clinical Dataset} & \textbf{Number} & \multicolumn{2}{c|}{\textbf{Bicubic Baseline}} & \multicolumn{2}{c|}{\textbf{Compact SRCNN (FP32)}} & \multicolumn{2}{c|}{\textbf{Proposed FPGA (PTQ Q7)}} & \multicolumn{2}{c}{\textbf{Quantization Loss ($\Delta$)}} \\
-\textbf{Benchmark} & \textbf{of Images} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{$\Delta$PSNR (dB)} & \textbf{$\Delta$SSIM} \\
+\textbf{Clinical Dataset} & \textbf{Evaluated} & \multicolumn{2}{c|}{\textbf{Bicubic Baseline}} & \multicolumn{2}{c|}{\textbf{Compact SRCNN (FP32)}} & \multicolumn{2}{c|}{\textbf{Proposed FPGA (PTQ Q7)}} & \multicolumn{2}{c}{\textbf{Quantization Loss ($\Delta$)}} \\
+\textbf{Benchmark} & \textbf{Samples} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{$\Delta$PSNR (dB)} & \textbf{$\Delta$SSIM} \\
 \hline
-NIH ChestX-ray14 \cite{wang2017chestxray} & 1,750 & 36.912 & 0.9412 & 39.380 & 0.9665 & \textbf{39.346} & \textbf{0.9661} & $-0.034$ & $-0.0004$ \\
-Guangzhou Pediatric \cite{kermany2018identifying} & 350 & 36.251 & 0.8995 & 38.980 & 0.9288 & \textbf{38.941} & \textbf{0.9284} & $-0.039$ & $-0.0004$ \\
+NIH ChestX-ray14 \cite{wang2017chestxray} & [Pending] & [TBD] & [TBD] & [TBD] & [TBD] & [TBD] & [TBD] & [TBD] & [TBD] \\
+Guangzhou Pediatric \cite{kermany2018identifying} & [Pending] & [TBD] & [TBD] & [TBD] & [TBD] & [TBD] & [TBD] & [TBD] & [TBD] \\
 \hline
-\textbf{Combined Benchmark} & \textbf{2,100} & 36.802 & 0.9342 & 39.313 & 0.9602 & \textbf{39.278} & \textbf{0.9598} & $\mathbf{-0.035}$ & $\mathbf{-0.0004}$ \\
+\textbf{Overall Clinical Benchmark} & \textbf{[Total]} & \textbf{[TBD]} & \textbf{[TBD]} & \textbf{[TBD]} & \textbf{[TBD]} & \textbf{[TBD]} & \textbf{[TBD]} & \textbf{[TBD]} & \textbf{[TBD]} \\
 \hline
 \end{tabular}
 \end{table*}
 
-\subsubsection{Diagnostic Safety and Hallucination-Avoidance Verification}
-In medical imaging modalities, preserving diagnostic integrity requires strict guarantees against generative artifacts. Generative Adversarial Networks (GANs) and diffusion priors are susceptible to \textit{hallucination}---synthesizing visually plausible yet anatomically fictitious textures, such as false nodules or artificial interstitial markings \cite{bhadra2021hallucinations}. 
-
-In our framework, hallucination avoidance is guaranteed deterministically through three architectural constraints:
-\begin{enumerate}
-    \item \textbf{Deterministic Mapping:} The network topology is purely feedforward, lacking stochastic latent vectors or adversarial feedback loops during inference.
-    \item \textbf{Exact Numerical Bounds:} Across all 2,100 clinical radiographs, the Mean Absolute Error (MAE) between hardware fixed-point outputs and software float references is strictly bounded to $\text{MAE} = 0.68\text{ LSB}$ (where $1\text{ LSB} = 1/255$). Maximum localized pixel deviation is strictly below $12\text{ LSB}$, confined exclusively to high-frequency skeletal transitions.
-    \item \textbf{Zero Overflow Sign-off:} Hardware execution logs recorded 0 overflow or underflow exceptions, confirming that internal accumulator widening to 24 bits ($S24.7$) completely eliminates numeric clipping distortions.
-\end{enumerate}
-Qualitative visual inspections confirm that delicate anatomical landmarks---such as pulmonary vessel bifurcations, fine diaphragmatic margins, and trabecular bone striations---are reconstructed cleanly without high-frequency ringing or hallucinatory artifacts.
+\subsubsection{Qualitative Analysis and Diagnostic Safety Verification}
+\begin{itemize}
+    \item \textbf{Visual Comparison (Planned Fig.~7):} Zoomed-in Regions of Interest (ROIs) on critical anatomical structures (rib trabeculae, pulmonary vessels, pleural boundaries) comparing Bicubic, FP32, and FPGA outputs.
+    \item \textbf{Hallucination-Avoidance Verification:} Demonstration that deterministic mapping with bounded fixed-point dynamic range avoids the synthetic structural artifacts common in GAN-based and diffusion-based super-resolution models.
+    \item \textbf{Residual Error Check:} Verification of pixel-level error bounds ($\text{MAE} < 1\text{ LSB}$) and confirmation of zero overflow/clipping events during physical execution.
+\end{itemize}
 
 % =========================================================================
-% IV-C. BOUNDARY-ARTIFACT ELIMINATION AND OVERLAP-TILING ANALYSIS
+% IV-C. BOUNDARY-ARTIFACT ELIMINATION (OUTLINE)
 % =========================================================================
 \subsection{Boundary-Artifact Elimination and Overlap-Tiling Verification}
 \label{sec:tiling_eval}
 
-To validate Algorithm~1 formulated in Section~III-D, we evaluate the spatial continuity of reconstructed radiographs across patch boundaries. 
-
-When tiling without overlap ($S = 128$, $\text{margin} = 0$), severe boundary seams emerge along the grid lines. These discontinuities stem from the receptive field truncation of the cascaded convolutional layers: Layer~1 ($9 \times 9$) and Layer~3 ($5 \times 5$) induce an edge distortion margin of $M_{rf} = \lfloor 9/2 \rfloor + \lfloor 5/2 \rfloor = 4 + 2 = 6\text{ pixels}$. Along the tile perimeter, pixels computed with truncated receptive fields exhibit localized PSNR drops exceeding $4.8\text{ dB}$, producing visible gridlines across clinical lung fields.
-
-In contrast, our boundary-safe overlap-tiling strategy employs an overlap margin of $M = 8\text{ pixels}$ ($M > M_{rf}$) with stride $S = 112$, paired with peripheral edge-replication padding. During PS-side canvas reassembly, the corrupted 8-pixel exterior halo of each $128 \times 128$ patch is discarded, stitching exclusively the valid interior $112 \times 112$ core into the global image buffer. Across all 2,100 radiographs, this protocol achieves \textbf{100\% seam-free reconstruction}, eliminating edge artifacts entirely while adding negligible software overhead.
+\begin{itemize}
+    \item \textbf{Evaluation Objective:} Empirically validate Algorithm~1 (Hardware-Aware Overlap-Tiling) in preventing edge truncation artifacts across tile boundaries.
+    \item \textbf{Comparative Setup:}
+    \begin{itemize}
+        \item \textit{Non-overlapping Tiling ($S=128, M=0$):} Observation of boundary seam discontinuities and localized PSNR drops along patch seams due to receptive field truncation ($M_{rf} = 6\text{ px}$).
+        \item \textit{Proposed Overlap-Tiling ($S=112, M=8$):} Elimination of boundary seams through 8-pixel margin exclusion and edge-replication padding.
+    \end{itemize}
+    \item \textbf{Stitching Overhead Analysis:} Assessment of PS canvas reconstruction latency (approximately 1.54\% of full-frame time for $1024 \times 1024$ frames).
+\end{itemize}
 
 % =========================================================================
-% IV-D. END-TO-END SYSTEM LATENCY AND EXECUTION PROFILING
+% IV-D. END-TO-END SYSTEM LATENCY AND PROFILING (OUTLINE)
 % =========================================================================
 \subsection{End-to-End System Latency and Execution Profiling}
 \label{sec:latency_eval}
 
-\subsubsection{Latency Breakdown Across System Components}
-To provide absolute transparency regarding real-world performance, Table~\ref{tab:latency_breakdown} presents the empirically measured execution breakdown across varying image resolutions on the PYNQ-Z2 SoC.
+\subsubsection{Latency Decomposition Framework}
+Measurement and breakdown of execution time across the complete heterogeneous pipeline:
+\begin{itemize}
+    \item $T_{\text{bicubic}}$: Host-side bicubic pre-interpolation on the ARM Cortex-A9.
+    \item $\sum T_{\text{DMA+PL}}$: DMA packet streaming and pipelined PL compute across all image patches.
+    \item $T_{\text{stitch}}$: Canvas reconstruction, margin exclusion, and memory assembly on the host.
+\end{itemize}
 
 \begin{table*}[t]
-\caption{End-to-End Execution Latency and Throughput Breakdown Across Different Radiographic Resolutions on Zynq-7020 SoC}
+\caption{End-to-End Execution Latency and Throughput Breakdown Framework [Outline Skeleton]}
 \label{tab:latency_breakdown}
 \centering
 \begin{tabular}{lcccccc}
 \hline
-\textbf{Resolution} & \textbf{Tiling Scheme} & \textbf{Patch Count} & \textbf{Bicubic Pre-Proc.} & \textbf{AXI DMA + PL Compute} & \textbf{Canvas Stitching} & \textbf{Total Frame Time} \\
+\textbf{Resolution} & \textbf{Tiling Scheme} & \textbf{Tile Count} & \textbf{Bicubic Pre-Proc.} & \textbf{AXI DMA + PL Compute} & \textbf{Canvas Stitching} & \textbf{Total Frame Time} \\
 \textbf{($H \times W$)} & \textbf{\& Pitch} & \textbf{($N_p$)} & \textbf{(PS ARM Cortex-A9)} & \textbf{(64-bit HP Bus + PL)} & \textbf{(PS ARM Cortex-A9)} & \textbf{(Frame Rate)} \\
 \hline
-$1024 \times 1024$ & Non-overlapping ($S=128$) & 64 & 32.105~ms (7.23\%) & 405.257~ms (91.23\%) & 6.828~ms (1.54\%) & \textbf{444.190~ms (2.25 FPS)} \\
-$1024 \times 1024$ & Overlap-Tiling ($S=112$) & 100 & 32.105~ms (4.32\%) & 633.200~ms (85.27\%) & 77.300~ms (10.41\%) & \textbf{742.605~ms (1.35 FPS)} \\
-$1638 \times 1236$ & Overlap-Tiling ($S=112$) & 180 & 64.500~ms (4.80\%) & 1139.760~ms (84.84\%) & 139.128~ms (10.36\%) & \textbf{1343.388~ms (0.74 FPS)} \\
+$1024 \times 1024$ & Non-overlapping ($S=128$) & 64 & [TBD] & [TBD] & [TBD] & [TBD FPS] \\
+$1024 \times 1024$ & Overlap-Tiling ($S=112$) & 100 & [TBD] & [TBD] & [TBD] & [TBD FPS] \\
+$1638 \times 1236$ & Overlap-Tiling ($S=112$) & 180 & [TBD] & [TBD] & [TBD] & [TBD FPS] \\
 \hline
 \end{tabular}
 \end{table*}
 
-For a standard $1024 \times 1024$ radiograph under the 64-patch non-overlapping baseline, the hardware accelerator achieves an end-to-end execution time of \textbf{444.19~ms}, corresponding to a sustained frame rate of \textbf{2.25~FPS}:
+\subsubsection{Analysis of Memory Hierarchy and Scaling Overhead}
 \begin{itemize}
-    \item \textbf{Bicubic Pre-processing (PS ARM):} $32.105\text{ ms}$ ($7.23\%$).
-    \item \textbf{AXI DMA Transfers \& PL Processing ($64 \times 6.332\text{ ms}$):} $405.257\text{ ms}$ ($91.23\%$).
-    \item \textbf{Canvas Stitching (PS ARM):} $6.828\text{ ms}$, constituting approximately \textbf{1.54\%} of the total frame latency.
+    \item Detailed scaling analysis of DMA transfers and PL execution vs. tile count.
+    \item Investigation of ARM Cortex-A9 memory cache effects during non-contiguous 2D strided array stitching on large image canvases ($>1.5\text{ Mpixels}$).
+    \item End-to-end hardware acceleration speedup relative to pure ARM CPU software execution.
 \end{itemize}
 
-\subsubsection{Resolution Scaling and Memory Access Analysis}
-When scaling to full-format clinical radiographs of resolution $1638 \times 1236$ ($N_p = \lceil 1638/112 \rceil \times \lceil 1236/112 \rceil = 15 \times 12 = 180\text{ patches}$), total execution time scales to \textbf{1343.39~ms} ($0.74\text{ FPS}$). Pure hardware compute and DMA transfers scale linearly with tile count ($180 \times 6.332\text{ ms} = 1139.76\text{ ms}$, representing 84.84\% of execution). 
-
-Crucially, canvas stitching overhead increases from $6.828\text{ ms}$ ($0.107\text{ ms/patch}$) in the non-overlapping configuration to $139.128\text{ ms}$ ($0.773\text{ ms/patch}$) in the 180-patch overlap configuration. This non-linear scaling is governed by host memory hierarchy effects: in the non-overlapping baseline, full $128 \times 128$ blocks are written directly into contiguous memory; in contrast, overlap stitching requires interior sub-array slicing ($[8:120, 8:120]$) and strided 2D memory copies into a large 2-megapixel NumPy buffer. On the 650~MHz in-order ARM Cortex-A9 core, strided writes induce frequent L1/L2 data cache misses and boundary conditional checks. Nonetheless, hardware compute dominates over 84\% of total latency, confirming balanced system pipelining.
-
-Compared to unaccelerated software execution on the ARM Cortex-A9 host (which requires over 8.2~seconds per megapixel radiograph), our FPGA-accelerated co-design delivers an end-to-end \textbf{speedup of $18.5\times$}.
-
 % =========================================================================
-% IV-E. COMPARISON WITH STATE-OF-THE-ART FPGA ACCELERATORS
+% IV-E. COMPARISON WITH STATE-OF-THE-ART (OUTLINE)
 % =========================================================================
-\subsection{Comparison with State-of-the-Art FPGA Accelerators}
+\subsection{Hardware Resource Utilization and SOTA Comparison}
 \label{sec:sota_comparison}
 
-To contextualize our contributions, Table~\ref{tab:sota_extended} extends the literature analysis established in Section~II, comparing the proposed accelerator against recent representative FPGA super-resolution architectures: F-DNA by Mao \textit{et al.} \cite{mao2020fdna}, Edge-SR by Liu \textit{et al.} \cite{liu2024high}, HDSuper by Chang \textit{et al.} \cite{chang2024hdsuper}, UASR-A by Huang \textit{et al.} \cite{huang2026uasr}, and real-time SR by Kim \textit{et al.} \cite{kim2019real}.
+\subsubsection{Comparison Protocol}
+To benchmark the proposed accelerator against recent literature, this subsection will extend the analysis initiated in Section~II (Table~I), comparing physical implementation metrics against state-of-the-art FPGA super-resolution designs.
 
 \begin{table*}[t]
-\caption{Comprehensive Comparison with State-of-the-Art FPGA-based Super-Resolution Accelerators}
+\caption{Comprehensive Comparison with State-of-the-Art FPGA Super-Resolution Accelerators [Outline Skeleton]}
 \label{tab:sota_extended}
 \centering
 \begin{tabular}{lcccccc}
@@ -169,42 +164,40 @@ To contextualize our contributions, Table~\ref{tab:sota_extended} extends the li
 \textbf{Design Metric} & \textbf{Kim \textit{et al.} \cite{kim2019real}} & \textbf{Mao \textit{et al.} \cite{mao2020fdna}} & \textbf{Liu \textit{et al.} \cite{liu2024high}} & \textbf{Chang \textit{et al.} \cite{chang2024hdsuper}} & \textbf{Huang \textit{et al.} \cite{huang2026uasr}} & \textbf{This Work} \\
 \hline
 Publication Year & 2019 & 2020 & 2024 & 2024 & 2026 & \textbf{2026} \\
-Target FPGA Platform & Xilinx Virtex-7 & Xilinx Kintex-7 & Xilinx ZCU102 & Xilinx XC7Z035 & Xilinx ZCU102 & \textbf{Xilinx Zynq-7020} \\
+Target FPGA Device & Xilinx Virtex-7 & Xilinx Kintex-7 & Xilinx ZCU102 & Xilinx XC7Z035 & Xilinx ZCU102 & \textbf{Xilinx Zynq-7020} \\
 Platform Classification & High-End FPGA & Mid-Tier FPGA & High-End MPSoC & Mid-Tier SoC & High-End MPSoC & \textbf{Low-Cost Edge SoC} \\
-Operating Clock ($F_{clk}$) & 150~MHz & 200~MHz & 200~MHz & 142~MHz & 250~MHz & \textbf{100~MHz} \\
+Clock Frequency ($F_{clk}$) & 150~MHz & 200~MHz & 200~MHz & 142~MHz & 250~MHz & \textbf{100~MHz} \\
 DSP48 Utilization & 740 (26.4\%) & 1,512 (98.2\%) & 1,210 (48.0\%) & 704 (78.2\%) & 181 (7.2\%) & \textbf{120 (54.55\%)} \\
-BRAM36K Utilization & 432 & 235 & 412 & 312 & 142 & \textbf{3.50 (2.50\%)} \\
+BRAM36K Blocks & 432 & 235 & 412 & 312 & 142 & \textbf{3.50 (2.50\%)} \\
 LUT Utilization & 142,500 & 82,410 & 118,400 & 94,200 & 42,100 & \textbf{8,615 (16.20\%)} \\
-Total Chip Power & 12.80~W & 5.40~W & 16.85~W & 2.08~W & 2.88~W & \textbf{1.438~W} \\
-PL Dynamic Logic Power & --- & 3.82~W & 14.20~W & 1.34~W & 1.95~W & \textbf{0.047~W} \\
-Energy Efficiency (FPS/W) & 4.69 & 11.61 & 2.12 & 38.94 & 28.82 & \textbf{1.56 (Full Frame)} \\
-Accelerator Throughput & 60.0~fps (4K) & 62.7~fps (UHD) & 35.8~fps (FHD) & 81.0~fps (FHD) & 83.0~fps (FHD) & \textbf{157.9~patches/s} \\
-Quantization Precision & Fixed 16-bit & Fixed 13-bit & Fixed 8-bit & Fixed 16-bit & Fixed 16-bit & \textbf{PTQ Q7 (INT8)} \\
-Target Domain & Natural Video & Natural Images & Natural Images & Natural Images & Natural Images & \textbf{Medical Radiographs} \\
-Clinical Integrity Verification & No & No & No & No & No & \textbf{Yes (2,100 Images)} \\
+Total SoC Power & 12.80~W & 5.40~W & 16.85~W & 2.08~W & 2.88~W & \textbf{1.438~W} \\
+PL Dynamic Power & --- & 3.82~W & 14.20~W & 1.34~W & 1.95~W & \textbf{0.047~W} \\
+Energy Efficiency & 4.69 FPS/W & 11.61 FPS/W & 2.12 FPS/W & 38.94 FPS/W & 28.82 FPS/W & \textbf{[To Report]} \\
+Throughput & 60.0~fps (4K) & 62.7~fps (UHD) & 35.8~fps (FHD) & 81.0~fps (FHD) & 83.0~fps (FHD) & \textbf{157.9~p/s} \\
+Quantization Scheme & Fixed 16-bit & Fixed 13-bit & Fixed 8-bit & Fixed 16-bit & Fixed 16-bit & \textbf{PTQ Q7 (INT8)} \\
+Target Application & Natural Video & Natural Images & Natural Images & Natural Images & Natural Images & \textbf{Medical Radiographs} \\
+Clinical Validation & No & No & No & No & No & \textbf{Yes (Clinical CXR)} \\
 \hline
 \end{tabular}
 \end{table*}
 
-The comparison highlights four decisive advantages of our proposed co-design architecture:
-\begin{enumerate}
-    \item \textbf{Minimal Hardware Footprint:} Prior works demand expansive mid-to-high-tier FPGAs (e.g., ZCU102, Kintex-7, or Virtex-7) allocating between 181 and 1,512 DSP slices. In contrast, our microarchitecture consumes only \textbf{120 DSP48E1 slices} and a remarkably low \textbf{3.5 BRAM36K blocks} (2.50\%), fitting comfortably within entry-level edge silicon.
-    \item \textbf{Ultra-Low Power Envelope:} Our total SoC power dissipation is \textbf{1.438~W}, with the active PL accelerator core dissipating a mere \textbf{0.047~W} of dynamic logic power. This is $1.4\times$ to $11.7\times$ lower than existing FPGA accelerators (2.08~W--16.85~W), satisfying the sub-1.5~W thermal limit essential for portable, battery-operated bedside imaging.
-    \item \textbf{Streaming BRAM Efficiency:} By avoiding intermediate feature writebacks to external DRAM and engineering line-buffer depths precisely to patch pitch, on-chip memory utilization is reduced by over $40\times$ compared to prior works (3.5 BRAMs vs. 142--432 BRAMs).
-    \item \textbf{Dedicated Clinical Validation:} While all existing FPGA accelerators exclusively evaluate natural image datasets (Set5, Set14, Urban100), our work provides the first rigorous, large-scale clinical validation on 2,100 chest radiographs, explicitly proving preservation of diagnostic features.
-\end{enumerate}
+\subsubsection{Key Architectural Comparative Highlights}
+\begin{itemize}
+    \item \textbf{DSP and Memory Footprint:} Evaluation of DSP savings (120 DSPs vs. 181--1,512 DSPs) and BRAM reduction ($>40\times$ fewer BRAMs) enabled by on-chip streaming with zero DRAM intermediate writebacks.
+    \item \textbf{Power and Energy Efficiency:} Analysis of full-chip power (1.438~W total, 0.047~W PL dynamic logic) relative to prior accelerators (2.08~W--16.85~W) to satisfy portable bedside radiography constraints.
+    \item \textbf{Application Domain Focus:} Contrast between prior natural image benchmarks (Set5, Set14) and our specialized clinical radiography evaluation.
+\end{itemize}
 
 % =========================================================================
-% IV-F. DISCUSSION OF LIMITATIONS AND FUTURE DIRECTIONS
+% IV-F. DISCUSSION OF PRACTICAL LIMITATIONS (OUTLINE)
 % =========================================================================
-\subsection{Discussion of Practical Limitations}
+\subsection{Discussion of Practical Limitations and Future Work}
 \label{sec:limitations}
 
-While the proposed framework delivers high throughput and energy efficiency, three practical limitations warrant discussion:
 \begin{itemize}
-    \item \textbf{Host Software Pre/Post-Processing Overhead:} As demonstrated in Section~\ref{sec:latency_eval}, non-contiguous array slicing during canvas stitching on the ARM Cortex-A9 consumes approximately 10\% of execution time on large images ($1638 \times 1236$). Migrating bicubic interpolation and seam-clipping into dedicated RTL IP cores on the PL fabric represents a promising path toward fully autonomous hardware execution.
-    \item \textbf{Fixed Magnification Factor:} The current RTL line-buffer datapath is tailored for $2\times$ super-resolution. Supporting arbitrary or larger scale factors ($3\times, 4\times$) requires reconfigurable line-buffer strides or multi-stage cascade pipelines.
-    \item \textbf{Extreme Noise Resilience:} Although effective under standard clinical radiography, low-dose protocols with severe Poisson-Gaussian noise may require integrating an explicit denoising prior into the front-end feature extractor.
+    \item \textbf{Host Memory Bandwidth Bottlenecks:} Discussion of CPU-bound array slicing during canvas reassembly on large radiographs ($>1.5\text{ Mpixels}$), highlighting the future trajectory of migrating bicubic interpolation and seam exclusion into autonomous PL hardware IPs.
+    \item \textbf{Fixed Magnification Topology:} Evaluation of current $2\times$ scale factor constraints and pathways to support multi-scale or reconfigurable scaling ($3\times, 4\times$).
+    \item \textbf{Extreme Noise Resilience:} Considerations regarding severe Poisson noise in low-dose radiographic protocols and joint denoising-SR architectures.
 \end{itemize}
 
 \bibliographystyle{IEEEtran}
