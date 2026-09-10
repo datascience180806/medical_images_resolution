@@ -138,7 +138,7 @@ We adopt two complementary signed 8-bit fixed-point representations, following t
 \centering
 % Placeholder for Fig. 4: The user will draw and save as figures/fixed_point_datapath.png
 \includegraphics[width=\columnwidth]{fixed_point_datapath.png}
-\caption{Hardware fixed-point arithmetic datapath and binary point alignment mechanism: (a) Input pixel conversion to signed S7.0, (b) Convolutional weight quantization into fractional S0.7, (c) Signed multiplication yielding intermediate S7.7 products, (d) Left bit-shifting of bias ($\ll 7$) for binary point synchronization before 24-bit accumulation, and (e) Arithmetic right-shifting ($\gg 7$) with ReLU and saturation clamping.}
+\caption{Hardware fixed-point arithmetic datapath and binary point alignment mechanism: (a) Input pixel conversion to signed S7.0, (b) Convolutional weight quantization into fractional S0.7, (c) Signed multiplication yielding 16-bit intermediate products ($\text{S8.7}$), (d) Left bit-shifting of bias ($\ll 7$) for binary point synchronization before 24-bit accumulation ($\text{S16.7}$), and (e) Arithmetic right-shifting ($\gg 7$) with ReLU and saturation clamping.}
 \label{fig:fixed_point_datapath}
 \end{figure}
 
@@ -158,9 +158,9 @@ W_q = \text{clamp}\left(\left\lfloor W \cdot 2^7 \right\rceil,\, -128,\, 127\rig
 where $\lfloor \cdot \rceil$ denotes round-to-nearest integer.
 
 \subsubsection{Convolutional Accumulation and Binary Point Alignment}
-A critical mathematical consideration in fixed-point arithmetic is the alignment of fractional radix points during Multiply-Accumulate (MAC) operations. Multiplying a signed activation $X \in \text{S7.0}$ by a signed weight $W_q \in \text{S0.7}$ produces an intermediate product $P = X \cdot W_q$ with $7 + 0 = 7$ fractional bits, occupying the \textbf{$\text{S7.7}$ format}. Mathematically, multiplying two signed 8-bit integers spans a 15-bit dynamic range ($[-16,384,\, +16,383]$); in the physical RTL implementation, this product is registered in a standard 16-bit signed two's-complement format (providing one sign-extension guard bit) to preserve byte alignment and match standard FPGA DSP output ports.
+A critical mathematical consideration in fixed-point arithmetic is the alignment of fractional radix points during Multiply-Accumulate (MAC) operations. Multiplying a signed activation $X \in \text{S7.0}$ ($X \in [-128,\, +127]$) by a signed weight $W_q \in \text{S0.7}$ ($W_q \in [-128,\, +127]$, representing real coefficients within $[-1.0,\, +0.9921875]$) produces an intermediate product $P = X \cdot W_q$ with $7 + 0 = 7$ fractional bits. In signed two's-complement arithmetic, multiplying two 8-bit signed integers spans from $(-128) \times (+127) = -16,256$ up to the asymmetric corner case $(-128) \times (-128) = +16,384$. Because $+16,384$ strictly exceeds the maximum positive capacity of a 15-bit signed integer ($+16,383 = 2^{14} - 1$), the worst-case product structurally requires a full 16-bit signed representation ($[-32,768,\, +32,767]$). In the physical RTL implementation, this product is registered in a \textbf{16-bit signed $\text{S8.7}$ format} ($1\text{ sign bit} + 8\text{ integer bits} + 7\text{ fractional bits} = 16\text{ bits}$), completely preventing arithmetic overflow and natively matching standard FPGA DSP multiplier output ports.
 
-Because layer biases $B_k$ share the activation dynamic range and are natively quantized in S7.0 format, they cannot be directly added to the S7.7 product sum without inducing catastrophic scale misalignment. To synchronize binary points before accumulation, each bias term $B_k$ is bit-shifted left by 7 positions ($B_k \ll 7 = B_k \cdot 2^7$), lifting its representation into the S7.7 coordinate space. The unified MAC accumulation for output channel $k$ at coordinate $(i, j)$ is formulated as:
+Because layer biases $B_k$ share the activation dynamic range and are natively quantized in S7.0 format, they cannot be directly added to the product sum without inducing catastrophic scale misalignment. To synchronize binary points before accumulation, each bias term $B_k$ is bit-shifted left by 7 positions ($B_k \ll 7 = B_k \cdot 2^7$), lifting its representation into the coordinate space with 7 fractional bits. The unified MAC accumulation for output channel $k$ at coordinate $(i, j)$ is formulated as:
 \begin{equation}
 A_k(i, j) = \sum_{c=0}^{C_{in}-1} \sum_{u=0}^{K-1} \sum_{v=0}^{K-1} X_c(i+u, j+v) \cdot W_{k,c}(u, v) + \left(B_k \ll 7\right)
 \label{eq:mac_accumulation}
@@ -172,10 +172,10 @@ To prevent arithmetic overflow during large spatial summations, the internal acc
 \max |A_k| \le 81 \times 128 \times 128 + 128 \times 128 = 1,343,488 < 2^{21}
 \label{eq:accumulator_bound}
 \end{equation}
-Similarly, in Layer~3 ($K=5, C_{in}=8$), the maximum sum over $5 \times 5 \times 8 = 200$ products is bounded by $200 \times 128 \times 128 \approx 3.28 \times 10^6 < 2^{22}$. Consequently, sizing all internal accumulators to \textbf{24 bits} provides over 2 bits of guard margin, guaranteeing zero arithmetic overflow under all worst-case image patterns.
+Similarly, in Layer~3 ($K=5, C_{in}=8$), the maximum sum over $5 \times 5 \times 8 = 200$ products is bounded by $200 \times 128 \times 128 \approx 3.28 \times 10^6 < 2^{22}$. Consequently, sizing all internal accumulators to \textbf{24 bits} in \textbf{$\text{S16.7}$ format} ($1\text{ sign bit} + 16\text{ integer bits} + 7\text{ fractional bits}$) provides over 2 bits of guard margin, guaranteeing zero arithmetic overflow under all worst-case image patterns.
 
 \subsubsection{Hidden Layer Activation, Re-Quantization, and Output Recovery}
-To prepare intermediate feature maps for cascading into subsequent convolutional stages, the 24-bit accumulator value $A_k(i, j) \in \text{S7.7}$ must be downscaled back to S7.0 format. This re-quantization is executed through an arithmetic right-shift of 7 bits ($\lfloor A_k \gg 7 \rfloor$), effectively dividing by $2^7$ while truncating fractional bits. 
+To prepare intermediate feature maps for cascading into subsequent convolutional stages, the 24-bit accumulator value $A_k(i, j) \in \text{S16.7}$ must be downscaled back to S7.0 format. This re-quantization is executed through an arithmetic right-shift of 7 bits ($\lfloor A_k \gg 7 \rfloor$), effectively dividing by $2^7$ while truncating fractional bits. 
 
 For hidden layers ($l \in \{1, 2\}$), non-linear activation and saturation clamping are integrated into a single hardware operation:
 \begin{equation}
