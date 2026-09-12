@@ -164,19 +164,20 @@ Table~\ref{tab:image_quality_benchmark} details the quantitative image restorati
 \setlength{\tabcolsep}{3.5pt}
 \begin{tabular}{lcccccccccccc}
 \toprule
-\textbf{Model Architecture} & \textbf{Parameters} & \textbf{Upscaling} & \multicolumn{5}{c}{\textbf{\texttt{sub\_NIH} Benchmark (1,750 Images, $1024 \times 1024$)}} & \multicolumn{5}{c}{\textbf{\texttt{sub\_chest} Benchmark (350 Images, Arbitrary Res)}} \\
+\textbf{Model Architecture} & \textbf{Parameters} & \textbf{Upscaling} & \multicolumn{5}{c}{\textbf{\texttt{sub\_NIH} Benchmark (1,750 Images, $1024 \times 1024$)}} & \multicolumn{5}{c}{\textbf{\texttt{sub\_chest} Benchmark (450 Images, Arbitrary Res)}} \\
 \cmidrule(lr){4-8} \cmidrule(lr){9-13}
 & \textbf{(Count)} & \textbf{Mechanism} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{MS-SSIM} & \textbf{LPIPS $\downarrow$} & \textbf{EPI $\uparrow$} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{MS-SSIM} & \textbf{LPIPS $\downarrow$} & \textbf{EPI $\uparrow$} \\
 \midrule
 Bicubic Interpolation & 0 & Pre-Bicubic & 40.07 & 0.9753 & 0.9976 & 0.0956 & 0.3274 & 40.99 & 0.9597 & 0.9960 & 0.1427 & 0.3991 \\
-FSRCNN (C. Dong \textit{et al.} \cite{dong2016accelerating}) & 24,683 & Deconv & 31.97 & 0.9254 & 0.9724 & 0.4316 & -0.0508 & 32.35 & 0.8558 & 0.9542 & 0.5941 & 0.0002 \\
-ESPCN (W. Shi \textit{et al.} \cite{shi2016real}) & 26,796 & PixelShuffle & 37.24 & 0.9610 & 0.9941 & 0.2581 & 0.1479 & 37.43 & 0.9078 & 0.9862 & 0.3876 & 0.0867 \\
-VDSR (J. Kim \textit{et al.} \cite{kim2016accurate}) & 668,227 & Pre + Residual & 40.38 & 0.9777 & 0.9978 & 0.1140 & 0.4693 & 39.99 & 0.9432 & 0.9950 & 0.2027 & 0.3707 \\
-EDSR (B. Lim \textit{et al.} \cite{lim2017enhanced}) & 963,651 & ResBlock + PS & 40.37 & 0.9783 & 0.9980 & 0.0863 & 0.4076 & 40.31 & 0.9468 & 0.9957 & 0.1791 & 0.3718 \\
-SRGAN (C. Ledig \textit{et al.} \cite{ledig2017photo}) & $\sim$1.40M & GAN Generator & 37.57 & 0.9636 & 0.9947 & 0.2118 & 0.2412 & 38.18 & 0.9119 & 0.9878 & 0.3399 & 0.2173 \\
+SRCNN Original \cite{dong2014learning} & 8,129 & Pre-Bicubic & 39.62 & 0.9737 & 0.9967 & 0.1653 & 0.4451 & 39.53 & 0.9332 & 0.9921 & 0.2778 & 0.3511 \\
+FSRCNN \cite{dong2016accelerating} & 24,683 & Deconv & 31.97 & 0.9254 & 0.9724 & 0.4316 & -0.0508 & 32.35 & 0.8558 & 0.9542 & 0.5941 & 0.0002 \\
+ESPCN \cite{shi2016real} & 26,796 & PixelShuffle & 37.24 & 0.9610 & 0.9941 & 0.2581 & 0.1479 & 37.43 & 0.9078 & 0.9862 & 0.3876 & 0.0867 \\
+VDSR \cite{kim2016accurate} & 668,227 & Pre + Residual & 40.38 & 0.9777 & 0.9978 & 0.1140 & 0.4693 & 39.99 & 0.9432 & 0.9950 & 0.2027 & 0.3707 \\
+EDSR \cite{lim2017enhanced} & 963,651 & ResBlock + PS & 40.37 & 0.9783 & 0.9980 & 0.0863 & 0.4076 & 40.31 & 0.9468 & 0.9957 & 0.1791 & 0.3718 \\
+SRGAN \cite{ledig2017photo} & $\sim$1.40M & GAN Generator & 37.57 & 0.9636 & 0.9947 & 0.2118 & 0.2412 & 38.18 & 0.9119 & 0.9878 & 0.3399 & 0.2173 \\
 \midrule
-\textbf{Proposed Compact SRCNN (FP32)} & \textbf{1,649} & Pre-Bicubic & 39.62 & 0.9737 & 0.9967 & 0.1653 & 0.4451 & 39.53 & 0.9332 & 0.9921 & 0.2778 & 0.3511 \\
-\textbf{Proposed FPGA (PTQ Q7 INT8)} & \textbf{1,649} & Pre-Bicubic & \textbf{39.53} & \textbf{0.9730} & \textbf{0.9960} & \textbf{0.1668} & \textbf{0.4436} & \textbf{39.45} & \textbf{0.9326} & \textbf{0.9914} & \textbf{0.2790} & \textbf{0.3496} \\
+\textbf{Proposed Compact SRCNN (FP32)} & \textbf{1,649} & Pre-Bicubic & 39.30 & 0.9668 & 0.9966 & \textbf{0.0583} & 0.3039 & 39.24 & 0.9308 & 0.9947 & \textbf{0.1412} & 0.2491 \\
+\textbf{Proposed FPGA (PTQ Q7 INT8)} & \textbf{1,649} & Pre-Bicubic & \textbf{39.21} & \textbf{0.9661} & \textbf{0.9959} & \textbf{0.0598} & \textbf{0.3024} & \textbf{39.16} & \textbf{0.9302} & \textbf{0.9940} & \textbf{0.1424} & \textbf{0.2476} \\
 \midrule
 \textit{Quantization Delta ($\Delta$ = FPGA $-$ FP32)} & --- & --- & $-0.09$ & $-0.0007$ & $-0.0007$ & $+0.0015$ & $-0.0015$ & $-0.08$ & $-0.0006$ & $-0.0007$ & $+0.0012$ & $-0.0015$ \\
 \bottomrule
