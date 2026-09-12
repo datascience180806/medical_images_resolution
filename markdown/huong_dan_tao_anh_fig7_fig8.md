@@ -1,6 +1,6 @@
 # 📋 Hướng Dẫn Kỹ Thuật Chi Tiết: Tạo Hình Ảnh Thực Nghiệm Fig. 7 và Fig. 8 Cho Bài Báo IEEE
 
-> **Mục đích tài liệu:** Hướng dẫn cộng tác viên / thành viên nhóm tự động trích xuất, trực quan hóa và xuất ra 2 file hình ảnh chất lượng cao chuẩn IEEE (**Fig. 7** và **Fig. 8**) để đưa vào **Section IV (Experimental Results and Analysis)** của bài báo hội nghị GTSD 2026.
+> **Mục đích tài liệu:** Hướng dẫn tự động trích xuất, trực quan hóa và xuất ra 2 file hình ảnh chất lượng cao chuẩn IEEE (**Fig. 7** và **Fig. 8**) để đưa vào **Section IV (Experimental Results and Analysis)** của bài báo hội nghị GTSD 2026.
 
 ---
 
@@ -277,7 +277,7 @@ print(f">> Thành công! Đã xuất file: {output_fig8}")
 
 ---
 
-## TỔNG KẾT CHECKLIST CHO BẠN CỦA BẠN:
+## TỔNG KẾT CHECKLIST:
 1. Chạy script **Phần 1** để xuất ra file `fig7_boundary_ablation.png` đặt tại `Medical_SR_hardware_paper/GTSD2026-193-IEEE/figures/`.
 2. Lấy kết quả ảnh suy luận thực tế của các mô hình (đã lưu trong folder kết quả) thay vào script **Phần 2** để xuất file `fig8_visual_comparison.png`.
 3. Kiểm tra ảnh đảm bảo độ phân giải cao $\ge 300\text{ DPI}$, chữ số và nhãn chỉ số không bị đè lên hình ảnh.
