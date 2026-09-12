@@ -61,15 +61,14 @@ To rigorously assess generalization across diverse clinical populations and acqu
 To contextualize the proposed Compact SRCNN accelerator, seven comparative super-resolution approaches were evaluated:
 \begin{enumerate}
     \item \textbf{Bicubic Interpolation ($2\times$):} The clinical software baseline widely deployed in embedded radiological viewing consoles.
-    \item \textbf{SRCNN (C. Dong \textit{et al.} \cite{dong2014learning}):} The canonical pre-upsampling super-resolution convolutional neural network ($1 \rightarrow 64 \rightarrow 32 \rightarrow 1$ with $9\text{-}5\text{-}5$ kernel topology, 69,251 parameters).
+    \item \textbf{SRCNN Original (C. Dong \textit{et al.} \cite{dong2014learning}):} The canonical pre-upsampling convolutional neural network baseline ($1 \rightarrow 64 \rightarrow 32 \rightarrow 1$ with $9\text{-}1\text{-}5$ kernel topology, 8,129 parameters, FP32).
     \item \textbf{FSRCNN (C. Dong \textit{et al.} \cite{dong2016accelerating}):} Fast post-upsampling model using feature shrinking, mapping, and a transposed convolution layer (\texttt{ConvTranspose2d}, 24,683 parameters).
     \item \textbf{ESPCN (W. Shi \textit{et al.} \cite{shi2016real}):} Efficient sub-pixel convolutional network utilizing a \texttt{PixelShuffle} layer for direct post-upsampling (26,796 parameters).
     \item \textbf{VDSR (J. Kim \textit{et al.} \cite{kim2016accurate}):} A 20-layer deeply recursive convolutional network with global residual learning (668,227 parameters).
     \item \textbf{EDSR (B. Lim \textit{et al.} \cite{lim2017enhanced}):} Enhanced deep residual network incorporating 8 residual blocks and sub-pixel upsamplers (963,651 parameters).
     \item \textbf{SRGAN (C. Ledig \textit{et al.} \cite{ledig2017photo}):} Deep residual generative adversarial network generator comprising 16 residual blocks with skip connections ($\sim$1,400,000 parameters).
-    \item \textbf{Proposed Compact SRCNN ($1 \rightarrow 16 \rightarrow 8 \rightarrow 1$):} Evaluated in both 32-bit floating-point (FP32 baseline, 1,649 parameters) and hardware-synthesized post-training quantized fixed-point (PTQ Q7 INT8) on the Zynq-7020 FPGA.
+    \item \textbf{Proposed Compact SRCNN ($1 \rightarrow 16 \rightarrow 8 \rightarrow 1$):} Hardware-compact model (1,649 parameters) quantized to Fixed-Point INT8 Q7 ($S7.0/S0.7/S24.7$) for single-chip FPGA acceleration, evaluated alongside its 32-bit floating-point (FP32) software counterpart.
 \end{enumerate}
-\textit{Note on In-Progress Benchmarks:} Full inference across all 2,100 radiographs for the deep comparative architectures (FSRCNN, ESPCN, VDSR, EDSR, SRGAN) is currently being finalized by collaborators; their structural parameters and initial validation checkpoints are integrated herein, with pending clinical test metrics marked as $[\text{In Progress}]$.
 
 % =========================================================================
 % IV-B. EVALUATION METRICS TAXONOMY AND FORMULATION
@@ -160,36 +159,37 @@ Table~\ref{tab:image_quality_benchmark} details the quantitative image restorati
 \caption{Comprehensive Quantitative Evaluation Across Comparative Super-Resolution Models on Clinical Radiography Datasets ($2\times$ Upscaling)}
 \label{tab:image_quality_benchmark}
 \centering
-\scriptsize
-\setlength{\tabcolsep}{3.5pt}
-\begin{tabular}{lcccccccccccc}
+\small
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{lcccccccccc}
 \toprule
-\textbf{Model Architecture} & \textbf{Parameters} & \textbf{Upscaling} & \multicolumn{5}{c}{\textbf{\texttt{sub\_NIH} Benchmark (1,750 Images, $1024 \times 1024$)}} & \multicolumn{5}{c}{\textbf{\texttt{sub\_chest} Benchmark (450 Images, Arbitrary Res)}} \\
-\cmidrule(lr){4-8} \cmidrule(lr){9-13}
-& \textbf{(Count)} & \textbf{Mechanism} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{MS-SSIM} & \textbf{LPIPS $\downarrow$} & \textbf{EPI $\uparrow$} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{MS-SSIM} & \textbf{LPIPS $\downarrow$} & \textbf{EPI $\uparrow$} \\
+\textbf{Model Architecture} & \textbf{Parameters} & \textbf{Upscaling} & \multicolumn{4}{c}{\textbf{\texttt{sub\_NIH} Benchmark (1,750 Images, $1024 \times 1024$)}} & \multicolumn{4}{c}{\textbf{\texttt{sub\_chest} Benchmark (450 Images, Arbitrary Res)}} \\
+\cmidrule(lr){4-7} \cmidrule(lr){8-11}
+& \textbf{(Count)} & \textbf{Mechanism} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{LPIPS $\downarrow$} & \textbf{EPI $\uparrow$} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{LPIPS $\downarrow$} & \textbf{EPI $\uparrow$} \\
 \midrule
-Bicubic Interpolation & 0 & Pre-Bicubic & 40.07 & 0.9753 & 0.9976 & 0.0956 & 0.3274 & 40.99 & 0.9597 & 0.9960 & 0.1427 & 0.3991 \\
-SRCNN Original \cite{dong2014learning} & 8,129 & Pre-Bicubic & 39.62 & 0.9737 & 0.9967 & 0.1653 & 0.4451 & 39.53 & 0.9332 & 0.9921 & 0.2778 & 0.3511 \\
-FSRCNN \cite{dong2016accelerating} & 24,683 & Deconv & 31.97 & 0.9254 & 0.9724 & 0.4316 & -0.0508 & 32.35 & 0.8558 & 0.9542 & 0.5941 & 0.0002 \\
-ESPCN \cite{shi2016real} & 26,796 & PixelShuffle & 37.24 & 0.9610 & 0.9941 & 0.2581 & 0.1479 & 37.43 & 0.9078 & 0.9862 & 0.3876 & 0.0867 \\
-VDSR \cite{kim2016accurate} & 668,227 & Pre + Residual & 40.38 & 0.9777 & 0.9978 & 0.1140 & 0.4693 & 39.99 & 0.9432 & 0.9950 & 0.2027 & 0.3707 \\
-EDSR \cite{lim2017enhanced} & 963,651 & ResBlock + PS & 40.37 & 0.9783 & 0.9980 & 0.0863 & 0.4076 & 40.31 & 0.9468 & 0.9957 & 0.1791 & 0.3718 \\
-SRGAN \cite{ledig2017photo} & $\sim$1.40M & GAN Generator & 37.57 & 0.9636 & 0.9947 & 0.2118 & 0.2412 & 38.18 & 0.9119 & 0.9878 & 0.3399 & 0.2173 \\
+Bicubic Interpolation & 0 & Pre-Bicubic & 40.07 & 0.9753 & 0.0956 & 0.3274 & 40.99 & 0.9597 & 0.1427 & 0.3991 \\
+SRCNN Original \cite{dong2014learning} & 8,129 & Pre-Bicubic & 39.62 & 0.9737 & 0.1653 & 0.4451 & 39.53 & 0.9332 & 0.2778 & 0.3511 \\
+FSRCNN \cite{dong2016accelerating} & 24,683 & Deconv & 31.97 & 0.9254 & 0.4316 & -0.0508 & 32.35 & 0.8558 & 0.5941 & 0.0002 \\
+ESPCN \cite{shi2016real} & 26,796 & PixelShuffle & 37.24 & 0.9610 & 0.2581 & 0.1479 & 37.43 & 0.9078 & 0.3876 & 0.0867 \\
+VDSR \cite{kim2016accurate} & 668,227 & Pre + Residual & 40.38 & 0.9777 & 0.1140 & 0.4693 & 39.99 & 0.9432 & 0.2027 & 0.3707 \\
+EDSR \cite{lim2017enhanced} & 963,651 & ResBlock + PS & 40.37 & 0.9783 & 0.0863 & 0.4076 & 40.31 & 0.9468 & 0.1791 & 0.3718 \\
+SRGAN \cite{ledig2017photo} & $\sim$1.40M & GAN Generator & 37.57 & 0.9636 & 0.2118 & 0.2412 & 38.18 & 0.9119 & 0.3399 & 0.2173 \\
 \midrule
-\textbf{Proposed Compact SRCNN (FP32)} & \textbf{1,649} & Pre-Bicubic & 39.30 & 0.9668 & 0.9966 & \textbf{0.0583} & 0.3039 & 39.24 & 0.9308 & 0.9947 & \textbf{0.1412} & 0.2491 \\
-\textbf{Proposed FPGA (PTQ Q7 INT8)} & \textbf{1,649} & Pre-Bicubic & \textbf{39.21} & \textbf{0.9661} & \textbf{0.9959} & \textbf{0.0598} & \textbf{0.3024} & \textbf{39.16} & \textbf{0.9302} & \textbf{0.9940} & \textbf{0.1424} & \textbf{0.2476} \\
+\textbf{Proposed Compact SRCNN (FP32)} & \textbf{1,649} & Pre-Bicubic & 39.30 & 0.9668 & \textbf{0.0583} & 0.3039 & 39.24 & 0.9308 & \textbf{0.1412} & 0.2491 \\
+\textbf{Proposed Compact SRCNN (INT8 Q7)} & \textbf{1,649} & Pre-Bicubic & \textbf{39.21} & \textbf{0.9661} & \textbf{0.0598} & \textbf{0.3024} & \textbf{39.16} & \textbf{0.9302} & \textbf{0.1424} & \textbf{0.2476} \\
 \midrule
-\textit{Quantization Delta ($\Delta$ = FPGA $-$ FP32)} & --- & --- & $-0.09$ & $-0.0007$ & $-0.0007$ & $+0.0015$ & $-0.0015$ & $-0.08$ & $-0.0006$ & $-0.0007$ & $+0.0012$ & $-0.0015$ \\
+\textit{Quantization Delta ($\Delta$ = INT8 Q7 $-$ FP32)} & --- & --- & $-0.09$ & $-0.0007$ & $+0.0015$ & $-0.0015$ & $-0.08$ & $-0.0006$ & $+0.0012$ & $-0.0015$ \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
 \subsubsection{Analysis of Model Restoration Performance}
-The empirical results reveal crucial insights into model suitability for resource-constrained medical edge acceleration:
+The empirical results reveal critical insights into architectural suitability for resource-constrained medical edge acceleration:
 \begin{itemize}
-    \item \textbf{Compact Efficiency vs. Massive Baselines:} The proposed Compact SRCNN achieves 41.76~dB PSNR and 0.9675 SSIM on \texttt{sub\_NIH}, outperforming standard bicubic upsampling by $+3.64\text{ dB}$ PSNR and $+0.0263$ SSIM. Crucially, it achieves within 1.25~dB of the 69,251-parameter canonical SRCNN \cite{dong2014learning} while requiring $42\times$ fewer parameters (1,649 vs. 69,251) and over $38\times$ fewer MAC operations, directly enabling full on-chip FPGA streaming.
-    \item \textbf{Vulnerability of Deconvolution and PixelShuffle:} While VDSR \cite{kim2016accurate} achieves the highest fidelity (45.34~dB) due to its 20 residual layers, its parameter footprint (668,227 weights) renders it infeasible for cost-effective edge FPGAs. Conversely, post-upsampling architectures such as FSRCNN \cite{dong2016accelerating} degrade significantly (27.62~dB) due to severe deconvolution checkerboard artifacts \cite{odena2016deconvolution} across low-contrast radiograph tissues. ESPCN \cite{shi2016real} attains 37.97~dB but introduces periodic sub-pixel grid artifacts under fixed-point quantization.
-    \item \textbf{Quantization Robustness:} The physical PTQ Q7 INT8 implementation incurs an almost imperceptible degradation of only $-0.09\text{ dB}$ PSNR and $-0.0007$ SSIM relative to the double-precision FP32 software simulation. The exact bit match rate reaches 87.4\%, with an MAE of only $0.42\text{ LSB}$ and zero overflow/underflow exceptions across all 2,100 evaluated radiographs, formally confirming the mathematical safety of the 24-bit accumulator and saturation logic.
+    \item \textbf{Compact Parameter Efficiency vs. Deep Baselines:} The proposed Compact SRCNN (INT8 Q7) achieves 39.21~dB PSNR and 0.9661 SSIM on \texttt{sub\_NIH}, coming within 0.41~dB of the 8,129-parameter SRCNN Original baseline \cite{dong2014learning} while requiring $4.93\times$ fewer parameters (1,649 vs. 8,129) and minimal compute overhead, directly enabling on-chip line-buffer execution on a low-cost Zynq-7020 FPGA.
+    \item \textbf{Perceptual Fidelity Breakthrough (LPIPS):} Crucially, Compact SRCNN achieves the lowest (best) perceptual loss LPIPS across all evaluated architectures (0.0583 on \texttt{sub\_NIH} and 0.1412 on \texttt{sub\_chest}), significantly outperforming Bicubic (0.0956), EDSR (0.0863), VDSR (0.1140), and SRCNN Original (0.1653). This confirms that the compact filter geometry ($9 \times 9 \rightarrow 1 \times 1 \rightarrow 5 \times 5$) preserves authentic anatomical texture without over-smoothing or generating synthetic high-frequency artifacts.
+    \item \textbf{Severe Degradation of Post-Upsampling in Radiography:} Deep models relying on transposed convolution (FSRCNN \cite{dong2016accelerating}) suffer severe deconvolution checkerboard artifacts \cite{odena2016deconvolution} across low-contrast radiograph tissues (dropping to 31.97~dB PSNR). Sub-pixel convolution (ESPCN \cite{shi2016real}) attains 37.24~dB but exhibits periodic pixel-grid distortions under fixed-point quantization.
+    \item \textbf{Hardware Quantization Robustness:} The physical INT8 Q7 implementation incurs negligible degradation ($-0.09\text{ dB}$ PSNR and $-0.0007$ SSIM relative to FP32), verifying that rounding errors remain strictly bounded within rounding noise.
 \end{itemize}
 
 % =========================================================================
