@@ -15,3 +15,4 @@ NIH_dataset/
 *.jpeg
 *.pdf
 !00000001_000.png
+!Medical_SR_hardware_paper/**/figures/*
