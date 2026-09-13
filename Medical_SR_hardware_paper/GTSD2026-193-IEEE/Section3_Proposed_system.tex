@@ -339,7 +339,7 @@ The accelerator operates within a \textbf{single, unified 100~MHz clock domain} 
 
 Under post-implementation timing analysis in Vivado, the accelerator achieves complete timing closure with a positive Worst Negative Slack of:
 \begin{equation}
-    \text{WNS} = +0.903\text{ ns}, \quad \text{WHS} = +0.026\text{ ns} \quad (\text{at } 100\text{ MHz}),
+    \text{WNS} = +0.903\text{ ns}, \quad \text{WHS} = +0.045\text{ ns} \quad (\text{at } 100\text{ MHz}),
     \label{eq:wns}
 \end{equation}
 confirming reliable high-speed operation with a 9\% timing margin.
@@ -356,7 +356,7 @@ where $L_{pipe}$ represents the internal register stages of the line buffers, MA
 \end{equation}
 corresponding to a pure hardware compute time of only $0.174\text{ ms}$ at 100~MHz. 
 
-When integrated with host AXI DMA transfers, cache coherency management, and CPU overlap-tiling coordination, the total measured wall-clock execution time is \textbf{6.332~ms per $128 \times 128$ tile}, providing a sustained accelerator throughput of \textbf{157.9~patches/s}. For a full $1024 \times 1024$ radiograph under the 64-patch streaming baseline ($S = 128$), the end-to-end frame processing time comprises three strictly measured stages: host bicubic interpolation ($T_{\text{bicubic}} = 32.1$~ms on ARM Cortex-A9), AXI DMA transfers and pipelined PL execution across all 64 tiles ($\sum T_{\text{DMA+PL}} = 64 \times 6.332\text{~ms} = 405.3$~ms), and canvas stitching post-processing ($T_{\text{stitch}} = 6.8$~ms). This yields a total frame latency of $T_{\text{frame}} = 444.2$~ms, delivering \textbf{2.25~FPS} and an energy efficiency of 1.56~FPS/W at 1.438~W full-chip power. Under the boundary-safe overlap-tiling protocol ($S = 112$, requiring 100 tiles), the pipeline processes 100 patches ($\sum T_{\text{DMA+PL}} = 633.2$~ms), sustaining $\approx 1.5$~FPS end-to-end. The additional latency beyond raw hardware cycles is governed by AXI DMA scatter-gather descriptor processing over the 64-bit HP bus, OS interrupt service latencies, and CPU cache invalidation. Furthermore, the PL dynamic logic power dissipation is measured at a mere \textbf{0.047~W} (with total Zynq-7020 SoC power of 1.438~W), confirming outstanding energy efficiency for clinical edge devices compared to prior FPGA accelerators \cite{kim2019real, liu2024high}. A comprehensive summary of the accelerator's microarchitectural specifications, post-implementation resource consumption, and end-to-end timing breakdown is presented in Table~\ref{tab:accelerator_specs}.
+When integrated with host AXI DMA transfers, cache coherency management, and CPU overlap-tiling coordination, the total measured wall-clock execution time is \textbf{6.332~ms per $128 \times 128$ tile}, providing a sustained accelerator throughput of \textbf{157.9~patches/s}. For a full $1024 \times 1024$ radiograph under the 64-patch streaming baseline ($S = 128$), the end-to-end frame processing time comprises three strictly measured stages: host bicubic interpolation ($T_{\text{bicubic}} = 32.1$~ms on ARM Cortex-A9), AXI DMA transfers and pipelined PL execution across all 64 tiles ($\sum T_{\text{DMA+PL}} = 64 \times 6.332\text{~ms} = 405.3$~ms), and canvas stitching post-processing ($T_{\text{stitch}} = 6.8$~ms). This yields a total frame latency of $T_{\text{frame}} = 444.2$~ms, delivering \textbf{2.25~FPS} and an energy efficiency of 1.56~FPS/W at 1.438~W full-chip power. Under the boundary-safe overlap-tiling protocol ($S = 112$, requiring 100 tiles), the pipeline processes 100 patches ($\sum T_{\text{DMA+PL}} = 633.2$~ms), sustaining \textbf{1.35~FPS} (742.6~ms total frame latency, including 77.3~ms for CPU boundary trimming and stitching). The additional latency beyond raw hardware cycles is governed by AXI DMA scatter-gather descriptor processing over the 64-bit HP bus, OS interrupt service latencies, and CPU cache invalidation. Furthermore, the PL dynamic logic power dissipation is measured at a mere \textbf{0.047~W} (with total Zynq-7020 SoC power of 1.438~W), confirming outstanding energy efficiency for clinical edge devices compared to prior FPGA accelerators \cite{kim2019real, liu2024high}. A comprehensive summary of the accelerator's microarchitectural specifications, post-implementation resource consumption, and end-to-end timing breakdown is presented in Table~\ref{tab:accelerator_specs}.
 
 \begin{table*}[!b]
 \caption{Post-Implementation Resource Utilization and Microarchitectural Specifications on Xilinx Zynq-7020 (xc7z020clg400-1)}
@@ -368,7 +368,7 @@ When integrated with host AXI DMA transfers, cache coherency management, and CPU
 \hline
 Operating Clock Frequency & 100~MHz & --- & --- \\
 Worst Negative Slack (WNS) & +0.903~ns & --- & Timing Met \\
-Worst Hold Slack (WHS) & +0.026~ns & --- & Timing Met \\
+Worst Hold Slack (WHS) & +0.045~ns & --- & Timing Met \\
 DSP48E1 Slices & 120 & 220 & 54.55\% \\
 Block RAM (BRAM36K) & 3.50 & 140 & 2.50\% \\
 Slice Logic LUTs & 7,619 & 53,200 & 14.32\% \\

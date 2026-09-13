@@ -73,7 +73,7 @@ To contextualize the proposed Compact SRCNN accelerator, seven comparative super
     \item \textbf{ESPCN (W. Shi \textit{et al.} \cite{shi2016real}):} Efficient sub-pixel convolutional network utilizing a \texttt{PixelShuffle} layer for direct post-upsampling (26,796 parameters).
     \item \textbf{VDSR (J. Kim \textit{et al.} \cite{kim2016accurate}):} A 20-layer deeply recursive convolutional network with global residual learning (668,227 parameters).
     \item \textbf{EDSR (B. Lim \textit{et al.} \cite{lim2017enhanced}):} Enhanced deep residual network incorporating 8 residual blocks and sub-pixel upsamplers (963,651 parameters).
-    \item \textbf{SRGAN (C. Ledig \textit{et al.} \cite{ledig2017photo}):} Deep residual generative adversarial network generator comprising 16 residual blocks with skip connections ($\sim$1,400,000 parameters).
+    \item \textbf{SRGAN (C. Ledig \textit{et al.} \cite{ledig2017photo}):} Deep residual generative adversarial network generator comprising 16 residual blocks with skip connections ($\sim$1.55M parameters).
     \item \textbf{Proposed Compact SRCNN ($1 \rightarrow 16 \rightarrow 8 \rightarrow 1$):} Hardware-compact model (1,649 parameters) evaluated in both 32-bit floating-point (PyTorch FP32) and fixed-point Post-Training Quantization (FPGA Signed S7.0 / INT8 Q7).
 \end{enumerate}
 
@@ -178,7 +178,7 @@ FSRCNN \cite{dong2016accelerating} & 24,683 & Deconv & 31.97 & 0.9254 & 0.4316 &
 ESPCN \cite{shi2016real} & 26,796 & PixelShuffle & 37.24 & 0.9610 & 0.2581 & 0.1479 \\
 VDSR \cite{kim2016accurate} & 668,227 & Pre + Residual & \textbf{40.38} & 0.9777 & 0.1140 & \textbf{0.4693} \\
 EDSR \cite{lim2017enhanced} & 963,651 & ResBlock + PS & 40.37 & \textbf{0.9783} & 0.0863 & 0.4076 \\
-SRGAN \cite{ledig2017photo} & $\sim$1.40M & GAN Generator & 37.57 & 0.9636 & 0.2118 & 0.2412 \\
+SRGAN \cite{ledig2017photo} & $\sim$1.55M & GAN Generator & 37.57 & 0.9636 & 0.2118 & 0.2412 \\
 \midrule
 \textbf{Proposed Compact SRCNN (PyTorch, FP32)} & \textbf{1,649} & Pre-Bicubic & 39.31 & 0.9604 & \textbf{0.0583} & 0.4410 \\
 \textbf{Proposed Compact SRCNN (FPGA, Signed S7.0)} & \textbf{1,649} & Pre-Bicubic & 39.28 & 0.9598 & 0.0598 & 0.4398 \\
@@ -211,7 +211,7 @@ Fig.~\ref{fig:visual_comparison} visualizes the qualitative super-resolution com
 \subsection{Boundary-Artifact Elimination and Overlap-Tiling Verification}
 \label{sec:tiling_verification}
 
-In partitioned edge super-resolution, naïve non-overlapping tiling produces severe boundary seams. Because the convolutional receptive field spans $M_{rf} = 6\text{ pixels}$ ($4\text{ px}$ in Conv1, $1\text{ px}$ in Conv2, $1\text{ px}$ in Conv3), border pixels calculated without neighboring spatial support suffer severe edge-truncation errors.
+In partitioned edge super-resolution, naïve non-overlapping tiling produces severe boundary seams. Because the convolutional receptive field spans $M_{rf} = 6\text{ pixels}$ ($4\text{ px}$ in Conv1, $0\text{ px}$ in Conv2 ($1\times 1$), and $2\text{ px}$ in Conv3 ($5\times 5$)), border pixels calculated without neighboring spatial support suffer severe edge-truncation errors.
 
 \begin{figure}[!t]
 \centering
@@ -283,7 +283,8 @@ Empirical timing and physical power sign-off analysis on the Zynq-7020 reveals a
     \item \textbf{Stage-by-Stage Latency Profile:} On a standard $1024 \times 1024$ frame (64 tiles), the ARM Cortex-A9 host spends 32.11~ms (7.23\%) performing software bicubic upsampling, 405.26~ms (91.23\%) on pipelined AXI DMA streaming and PL RTL tensor computation (deterministic 6.33~ms per tile), and 6.83~ms (1.54\%) executing stitch assembly and boundary margin trimming, totaling 444.19~ms (2.25~FPS).
     \item \textbf{SoC Power Decomposition:} Post-route Vivado power analysis under peak active switching reveals that the dual-core ARM Cortex-A9 PS consumes 1.189~W, the PL static leakage draws 0.154~W, and the PL dynamic dissipation is 0.095~W---within which the accelerator systolic core logic consumes merely \textbf{0.047~W (47~mW)}. The complete SoC power dissipation is capped at \textbf{1.438~W}.
     \item \textbf{Cross-Platform Energy Efficiency Superiority:} While high-end laptop GPUs and host CPUs complete inference faster (44.61~ms and 124.29~ms), their thermal dissipation (42.1~W and 28.5~W) renders them entirely unsuitable for passively cooled, battery-powered bedside radiographic carts. The proposed Zynq-7020 accelerator delivers \textbf{1.56~FPS/W}, achieving a \textbf{$2.94\times$ energy efficiency gain over the NVIDIA RTX 3060 GPU} and \textbf{$5.57\times$ over the Intel i7-11800H CPU}.
-    \item \textbf{Memory Hierarchy Bottleneck on Non-Contiguous Slicing:} As image resolution expands to $1638 \times 1236$ (180 tiles), canvas stitching latency increases from 6.83~ms to 139.13~ms ($0.773\text{ ms/tile}$) due to non-contiguous 2D memory stride access exceeding the ARM Cortex-A9's 512~KB L2 cache capacity.
+    \item \textbf{Tiling Strategy Stitching Disparity (6.83~ms vs. 77.30~ms):} For the identical $1024 \times 1024$ image, canvas stitching latency increases by $11.3\times$ when transitioning from non-overlapping ($S=128$, 6.83~ms) to overlap-tiling ($S=112$, 77.30~ms), despite only a 56\% increase in tile count (64 to 100 tiles). This non-linear latency jump is attributable to CPU cache memory access patterns: non-overlapping tiling ($M=0$) writes power-of-two aligned $128 \times 128$ blocks directly into the destination buffer via fast contiguous memory block transfers. Conversely, overlap-tiling ($M=8$) requires slicing the inner $112 \times 112$ valid region from each $128 \times 128$ received tile (\texttt{tile[8:120, 8:120]}) and writing into non-power-of-two strided canvas offsets. On the ARM Cortex-A9 processor (32~KB L1 data cache, 512~KB L2 cache), these 11,200 non-contiguous row-slice assignments induce severe L1 cache-line thrashing and high DDR3 memory write-back latency.
+    \item \textbf{Memory Hierarchy Bottleneck on Non-Contiguous Slicing Across Resolutions:} As image resolution expands further to $1638 \times 1236$ (180 tiles), stitching latency climbs to 139.13~ms ($0.773\text{ ms/tile}$) as the larger 2.02~Mpixel canvas completely exceeds the ARM Cortex-A9's 512~KB L2 cache footprint.
 \end{itemize}
 
 % =========================================================================
