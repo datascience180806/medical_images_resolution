@@ -190,6 +190,13 @@ The empirical results reveal critical insights into architectural suitability fo
     \item \textbf{High-Fidelity Hardware Realization:} Both the GPU software reference and the physical FPGA accelerator utilize the exact same INT8 Q7 quantization scheme ($S7.0$ activations, $S0.7$ weights, and $S24.7$ accumulators). The hardware discrepancy between GPU tensor simulation and the synthesized FPGA RTL core is virtually imperceptible ($\Delta\text{PSNR} = -0.09\text{ dB}$, $\Delta\text{SSIM} = -0.0007$, $\text{MAE} < 0.42\text{ LSB}$), verifying zero overflow and complete arithmetic fidelity.
 \end{itemize}
 
+\subsubsection{Qualitative Visual Evaluation and Anatomical Detail Preservation}
+Fig.~\ref{fig:visual_comparison} visualizes the qualitative super-resolution comparison across all evaluated models on a representative clinical chest radiograph from the \texttt{sub\_NIH} benchmark ($2\times$ magnification). Two clinically sensitive regions of interest (ROIs) are examined:
+\begin{itemize}
+    \item \textbf{ROI 1 (Cortical Rib Boundary and Pleural Interface):} Standard bicubic interpolation exhibits pronounced blurring along the cortical bone margins (PSNR: 47.27~dB, LPIPS: 0.0614). FSRCNN suffers severe deconvolution checkerboard degradation (dropping to 36.52~dB PSNR and 0.4406 LPIPS), obscuring subtle osseous trabecular patterns. Deep residual networks (VDSR, EDSR) achieve high fidelity (PSNR 46.44~dB and 45.72~dB) but introduce mild edge over-smoothing. In contrast, the proposed Compact SRCNN (FPGA, INT8 Q7) sharply restores the cortical rib edge while achieving the best perceptual score (LPIPS: 0.0455), outperforming both Bicubic and deep architectures.
+    \item \textbf{ROI 2 (Pulmonary Parenchyma and Vascular Arborization):} In peripheral lung fields, fine bronchovascular branch bifurcations are obscured by bicubic blurring and smoothed by complex multi-block networks. The proposed FPGA accelerator faithfully reconstructs the delicate vascular tree with authentic radiographic texture (48.32~dB PSNR, 0.9872 SSIM, 0.1414 LPIPS), corroborating the quantitative LPIPS superiority observed across the full 1,750-image cohort in Table~\ref{tab:image_quality_benchmark}.
+\end{itemize}
+
 % =========================================================================
 % IV-D. BOUNDARY-ARTIFACT ELIMINATION
 % =========================================================================
@@ -200,10 +207,17 @@ In partitioned edge super-resolution, naïve non-overlapping tiling produces sev
 
 \begin{figure}[!t]
 \centering
-\includegraphics[width=\columnwidth]{figures/fig7_boundary_ablation.png}
-\caption{Empirical verification of boundary-artifact elimination on a clinical $1024 \times 1024$ chest radiograph: (a) Non-overlapping tiling ($S=128, M=0$) exhibiting visible grid seams and localized PSNR degradation; (b) Proposed hardware-aware overlap-tiling ($S=112, M=8$) producing seamless anatomical continuity; (c) Differential error map ($|I_{\text{overlap}} - I_{\text{non-overlap}}| \times 10$) highlighting the eliminated edge truncation errors.}
+\includegraphics[width=\columnwidth]{figures/boundary_ablation.png}
+\caption{Empirical verification of boundary-artifact elimination on a clinical $1024 \times 1024$ chest radiograph: (a) Naïve non-overlapping tiling ($S=128, M=0$) exhibiting visible grid seams and localized PSNR degradation; (b) Proposed hardware-aware overlap-tiling ($S=112, M=8$) producing seamless anatomical continuity; (c) Differential error map highlighting the eliminated edge-truncation cross-hatch seams.}
 \label{fig:boundary_ablation}
 \end{figure}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{figures/visual_comparison.png}
+\caption{Qualitative visual super-resolution comparison on a clinical chest radiograph from the \texttt{sub\_NIH} benchmark ($2\times$ upscaling). Two distinct regions of interest (ROIs) are highlighted: ROI 1 (top row) examines the cortical rib boundary and pleural interface; ROI 2 (bottom row) evaluates fine vascular arborization in lung parenchyma. Quantitative metric scores (PSNR / SSIM / LPIPS) are annotated beneath each inset across all evaluated models.}
+\label{fig:visual_comparison}
+\end{figure*}
 
 Fig.~\ref{fig:boundary_ablation} visualizes the empirical comparison between naïve tiling ($S=128, M=0$) and the proposed hardware-aware overlap-tiling protocol ($S=112, M=8$):
 \begin{itemize}
