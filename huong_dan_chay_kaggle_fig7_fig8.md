@@ -1,8 +1,8 @@
 # 🩻 Hướng Dẫn Thực Thi Inference Trên Kaggle Để Tạo Hình Fig. 7 và Fig. 8 (IEEE GTSD 2026)
 
 Tài liệu này cung cấp quy trình chi tiết từng bước để bạn và cộng tác viên đưa mã nguồn và bộ trọng số lên **Kaggle**, thực hiện suy luận (inference) trên tập ảnh lâm sàng `sub_NIH`, và xuất ra 2 file hình ảnh chuẩn xuất bản IEEE (**300 DPI**):
-1. **Fig. 7 (`fig7_boundary_ablation.png`)**: Đánh giá thực nghiệm triệt tiêu lỗi biên chia mảnh (Boundary-Artifact Elimination / Overlap-Tiling Ablation).
-2. **Fig. 8 (`fig8_visual_comparison.png`)**: So sánh chất lượng thị giác phóng to (ROI Zoom-in Insets) giữa các mô hình (Bicubic, FSRCNN, ESPCN, VDSR, EDSR, và Proposed Compact SRCNN).
+1. **Fig. 7 (`fig7_boundary_ablation.png`)**: Chỉ dùng **1 mô hình duy nhất (Proposed Compact SRCNN phần cứng)** nhằm đánh giá thực nghiệm triệt tiêu lỗi biên chia mảnh (Ablation Study: Non-overlapping $S=128, M=0$ vs. Proposed Overlap-Tiling $S=112, M=8$).
+2. **Fig. 8 (`fig8_visual_comparison.png`)**: So sánh chất lượng thị giác phóng to (ROI Zoom-in Insets) qua **toàn bộ 8 đối tượng** (Ground Truth, Bicubic, SRCNN Original, FSRCNN, ESPCN, VDSR, EDSR, và Proposed Compact SRCNN FPGA).
 
 ---
 
